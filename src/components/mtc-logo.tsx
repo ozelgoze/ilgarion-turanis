@@ -27,13 +27,13 @@ export default function AppLogo({ size = "md" }: { size?: "sm" | "md" | "lg" }) 
           className="font-mono font-bold tracking-[0.4em] text-accent mtc-glow-text"
           style={{ fontSize: nameSz }}
         >
-          MYTHRA COMMAND
+          UEE ATAK APP
         </div>
         <div
           className="font-mono tracking-[0.2em] text-text-dim/60 uppercase mt-0.5"
           style={{ fontSize: subSz }}
         >
-          AEGIS-CLASS TACTICAL DATA-LINK
+          ILGARION TURANIS [SCG]
         </div>
       </div>
     </div>
