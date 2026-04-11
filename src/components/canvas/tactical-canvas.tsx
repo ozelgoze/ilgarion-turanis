@@ -11,7 +11,18 @@ import {
 import type { Canvas as FabricCanvasType } from "fabric";
 import CanvasToolbar from "./canvas-toolbar";
 import { getNatoDataUrl } from "./nato-icons";
-import type { TacticalMarker, MarkerType, MarkerAffiliation } from "@/types/database";
+import {
+  buildArrowPathString,
+  createFabricDrawing,
+  type DrawTool,
+} from "./drawing-helpers";
+import type {
+  TacticalMarker,
+  MarkerType,
+  MarkerAffiliation,
+  MapDrawing,
+  DrawingType,
+} from "@/types/database";
 
 export interface TacticalCanvasRef {
   fitView: () => void;
@@ -27,9 +38,23 @@ export interface TacticalCanvasRef {
   updateMarkerPos: (markerId: string, x: number, y: number) => void;
   /** Removes a marker from the canvas by DB id. */
   removeMarker: (markerId: string) => void;
+  // ─── Realtime drawing manipulation ────────────────
+  /** Returns true if a drawing with this DB id already exists on the canvas. */
+  hasDrawing: (drawingId: string) => boolean;
+  /** Adds a drawing from an external source (realtime or initial load). */
+  addDrawing: (drawing: MapDrawing) => void;
+  /** Removes a drawing from the canvas by DB id. */
+  removeDrawing: (drawingId: string) => void;
 }
 
 export type GridType = "none" | "square" | "hex";
+
+export interface CreateDrawingPayload {
+  drawingType: DrawingType;
+  points: Array<{ x: number; y: number }>;
+  strokeColor: string;
+  strokeWidth: number;
+}
 
 interface TacticalCanvasProps {
   mapId: string;
@@ -52,6 +77,12 @@ interface TacticalCanvasProps {
   onMarkerMoved?: (markerId: string, x: number, y: number) => void;
   /** Called when Delete/Backspace is pressed with a marker selected */
   onMarkerDeleted?: (markerId: string) => void;
+  // ─── Drawing props ─────────────────────────────────
+  initialDrawings?: MapDrawing[];
+  /** Called when a new drawing is finalised; resolves to the new DB id ("" on error) */
+  onDrawingCreate?: (payload: CreateDrawingPayload) => Promise<string>;
+  /** Called when Delete is pressed with a drawing selected */
+  onDrawingDeleted?: (drawingId: string) => void;
 }
 
 const GRID_COLOR = "rgba(0, 255, 204, 0.12)";
@@ -144,6 +175,11 @@ function getMarkerId(obj: any): string {
   return (obj?.__markerId as string) ?? "";
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getDrawingId(obj: any): string {
+  return (obj?.__drawingId as string) ?? "";
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line react/display-name
@@ -160,6 +196,9 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       onMarkerDrop,
       onMarkerMoved,
       onMarkerDeleted,
+      initialDrawings = [],
+      onDrawingCreate,
+      onDrawingDeleted,
     },
     ref
   ) {
@@ -176,17 +215,68 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
     const cleanupRef = useRef<(() => void) | null>(null);
     const markersLoadedRef = useRef(false);
     const initialMarkersRef = useRef(initialMarkers);
+    const drawingsLoadedRef = useRef(false);
+    const initialDrawingsRef = useRef(initialDrawings);
 
     // Keep callbacks in a ref so event handlers always see the latest version
-    const cbRef = useRef({ onMarkerDrop, onMarkerMoved, onMarkerDeleted });
+    const cbRef = useRef({
+      onMarkerDrop,
+      onMarkerMoved,
+      onMarkerDeleted,
+      onDrawingCreate,
+      onDrawingDeleted,
+    });
     useEffect(() => {
-      cbRef.current = { onMarkerDrop, onMarkerMoved, onMarkerDeleted };
-    }, [onMarkerDrop, onMarkerMoved, onMarkerDeleted]);
+      cbRef.current = {
+        onMarkerDrop,
+        onMarkerMoved,
+        onMarkerDeleted,
+        onDrawingCreate,
+        onDrawingDeleted,
+      };
+    }, [
+      onMarkerDrop,
+      onMarkerMoved,
+      onMarkerDeleted,
+      onDrawingCreate,
+      onDrawingDeleted,
+    ]);
 
     const [gridType, setGridTypeState] = useState<GridType>(initialGridType);
     const [gridSize, setGridSizeState] = useState(initialGridSize);
     const [zoom, setZoom] = useState(1);
     const [imageLoaded, setImageLoaded] = useState(false);
+
+    // ─── Drawing tool state ──────────────────────────────────────────────
+    const [drawTool, setDrawTool] = useState<DrawTool>("select");
+    const [drawColor, setDrawColor] = useState<string>("#00ffcc");
+    const [drawStrokeWidth, setDrawStrokeWidth] = useState<number>(4);
+
+    // Refs so mouse handlers read the latest tool/color/width without re-binding
+    const drawStyleRef = useRef({ drawTool, drawColor, drawStrokeWidth });
+    useEffect(() => {
+      drawStyleRef.current = { drawTool, drawColor, drawStrokeWidth };
+    }, [drawTool, drawColor, drawStrokeWidth]);
+
+    // In-progress drawing state (set on mouse:down, consumed on mouse:up)
+    const drawingStateRef = useRef<{
+      active: boolean;
+      startX: number;
+      startY: number;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      previewObj: any | null;
+      tool: DrawTool;
+      color: string;
+      width: number;
+    }>({
+      active: false,
+      startX: 0,
+      startY: 0,
+      previewObj: null,
+      tool: "select",
+      color: "#00ffcc",
+      width: 4,
+    });
 
     // ─── Fit-view ────────────────────────────────────────────────────────
 
@@ -293,6 +383,40 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           c.remove(target);
           c.requestRenderAll();
         },
+
+        // ─── Realtime drawing manipulation ────────────────────────
+        hasDrawing: (drawingId: string) => {
+          const c = fabricRef.current;
+          if (!c || !drawingId) return false;
+          return c.getObjects().some((obj) => getDrawingId(obj) === drawingId);
+        },
+
+        addDrawing: (drawing: MapDrawing) => {
+          const c = fabricRef.current;
+          if (!c) return;
+          // Skip dup
+          if (c.getObjects().some((o) => getDrawingId(o) === drawing.id)) return;
+
+          import("fabric").then((fabric) => {
+            if (!fabricRef.current) return;
+            const obj = createFabricDrawing(fabric, drawing, canEdit);
+            if (!obj) return;
+            fabricRef.current.add(obj);
+            fabricRef.current.requestRenderAll();
+          });
+        },
+
+        removeDrawing: (drawingId: string) => {
+          const c = fabricRef.current;
+          if (!c) return;
+          const target = c
+            .getObjects()
+            .find((obj) => getDrawingId(obj) === drawingId);
+          if (!target) return;
+          if (c.getActiveObject() === target) c.discardActiveObject();
+          c.remove(target);
+          c.requestRenderAll();
+        },
       }),
       [fitView, canEdit]
     );
@@ -303,6 +427,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       if (!canvasElRef.current || !containerRef.current) return;
       let disposed = false;
       markersLoadedRef.current = false;
+      drawingsLoadedRef.current = false;
 
       async function init() {
         const fabric = await import("fabric");
@@ -320,7 +445,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
         });
         fabricRef.current = canvas;
 
-        // ── Keyboard: pan (Space) + delete marker ──────────────────
+        // ── Keyboard: pan (Space) + delete marker/drawing ──────────
         const onKeyDown = (e: KeyboardEvent) => {
           if (e.code === "Space" && !isSpaceDownRef.current) {
             isSpaceDownRef.current = true;
@@ -334,11 +459,21 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             const active = canvas.getActiveObject();
             if (!active) return;
             const markerId = getMarkerId(active);
-            if (!markerId) return;
-            canvas.remove(active);
-            canvas.discardActiveObject();
-            canvas.requestRenderAll();
-            cbRef.current.onMarkerDeleted?.(markerId);
+            if (markerId) {
+              canvas.remove(active);
+              canvas.discardActiveObject();
+              canvas.requestRenderAll();
+              cbRef.current.onMarkerDeleted?.(markerId);
+              return;
+            }
+            const drawingId = getDrawingId(active);
+            if (drawingId) {
+              canvas.remove(active);
+              canvas.discardActiveObject();
+              canvas.requestRenderAll();
+              cbRef.current.onDrawingDeleted?.(drawingId);
+              return;
+            }
           }
         };
         const onKeyUp = (e: KeyboardEvent) => {
@@ -351,36 +486,260 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
         window.addEventListener("keydown", onKeyDown);
         window.addEventListener("keyup", onKeyUp);
 
-        // ── Mouse pan ────────────────────────────────────────────
+        // ── Helper: convert a fabric pointer event to world coords ──
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const toWorld = (e: MouseEvent): { x: number; y: number } => {
+          const vpt = canvas.viewportTransform;
+          const rect = (canvas.upperCanvasEl ?? canvasElRef.current!).getBoundingClientRect();
+          const ox = e.clientX - rect.left;
+          const oy = e.clientY - rect.top;
+          return {
+            x: (ox - vpt[4]) / vpt[0],
+            y: (oy - vpt[5]) / vpt[3],
+          };
+        };
+
+        // ── Mouse down: pan OR begin drawing ────────────────────────
         canvas.on("mouse:down", (opt) => {
           const evt = opt.e as MouseEvent;
+
+          // Middle-button or Space → pan (takes priority over draw)
           if (evt.button === 1 || isSpaceDownRef.current) {
             isPanningRef.current = true;
             lastPosRef.current = { x: evt.clientX, y: evt.clientY };
             canvas.defaultCursor = "grabbing";
             canvas.selection = false;
             evt.preventDefault();
+            return;
+          }
+
+          // Left-button + a draw tool selected → begin drawing
+          if (!canEdit) return;
+          if (evt.button !== 0) return;
+          const { drawTool: tool, drawColor: color, drawStrokeWidth: width } =
+            drawStyleRef.current;
+          if (tool === "select") return;
+          // If the user clicked on an existing selectable object, let select handle it
+          if (opt.target) return;
+
+          const { x, y } = toWorld(evt);
+          drawingStateRef.current = {
+            active: true,
+            startX: x,
+            startY: y,
+            previewObj: null,
+            tool,
+            color,
+            width,
+          };
+          // Suppress fabric selection during draw
+          canvas.selection = false;
+          evt.preventDefault();
+        });
+
+        // ── Mouse move: pan OR update drawing preview ───────────────
+        canvas.on("mouse:move", (opt) => {
+          // Panning
+          if (isPanningRef.current) {
+            const evt = opt.e as MouseEvent;
+            const dx = evt.clientX - lastPosRef.current.x;
+            const dy = evt.clientY - lastPosRef.current.y;
+            const vpt = canvas.viewportTransform;
+            canvas.setViewportTransform([
+              vpt[0], vpt[1], vpt[2], vpt[3],
+              vpt[4] + dx, vpt[5] + dy,
+            ]);
+            lastPosRef.current = { x: evt.clientX, y: evt.clientY };
+            canvas.requestRenderAll();
+            return;
+          }
+
+          // Drawing
+          const ds = drawingStateRef.current;
+          if (!ds.active) return;
+          const evt = opt.e as MouseEvent;
+          const { x, y } = toWorld(evt);
+          const { startX: sx, startY: sy, tool, color, width } = ds;
+
+          // Remove previous preview (simpler than mutating)
+          if (ds.previewObj) {
+            canvas.remove(ds.previewObj);
+            ds.previewObj = null;
+          }
+
+          const common = {
+            stroke: color,
+            strokeWidth: width,
+            fill: "transparent",
+            selectable: false,
+            evented: false,
+            strokeLineCap: "round" as const,
+            strokeLineJoin: "round" as const,
+          };
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let preview: any = null;
+          switch (tool) {
+            case "line":
+              preview = new fabric.Line([sx, sy, x, y], common);
+              break;
+            case "arrow": {
+              const pathStr = buildArrowPathString(sx, sy, x, y);
+              preview = new fabric.Path(pathStr, common);
+              break;
+            }
+            case "rectangle":
+              preview = new fabric.Rect({
+                ...common,
+                left: Math.min(sx, x),
+                top: Math.min(sy, y),
+                width: Math.abs(x - sx),
+                height: Math.abs(y - sy),
+              });
+              break;
+            case "circle": {
+              const r = Math.hypot(x - sx, y - sy);
+              preview = new fabric.Circle({
+                ...common,
+                left: sx,
+                top: sy,
+                radius: r,
+                originX: "center",
+                originY: "center",
+              });
+              break;
+            }
+            default:
+              break;
+          }
+
+          if (preview) {
+            ds.previewObj = preview;
+            canvas.add(preview);
+            canvas.requestRenderAll();
           }
         });
 
-        canvas.on("mouse:move", (opt) => {
-          if (!isPanningRef.current) return;
-          const evt = opt.e as MouseEvent;
-          const dx = evt.clientX - lastPosRef.current.x;
-          const dy = evt.clientY - lastPosRef.current.y;
-          const vpt = canvas.viewportTransform;
-          canvas.setViewportTransform([
-            vpt[0], vpt[1], vpt[2], vpt[3],
-            vpt[4] + dx, vpt[5] + dy,
-          ]);
-          lastPosRef.current = { x: evt.clientX, y: evt.clientY };
-          canvas.requestRenderAll();
-        });
+        // ── Mouse up: finalise pan OR finalise drawing ──────────────
+        canvas.on("mouse:up", (opt) => {
+          if (isPanningRef.current) {
+            isPanningRef.current = false;
+            canvas.selection = canEdit;
+            canvas.defaultCursor = isSpaceDownRef.current ? "grab" : "default";
+            return;
+          }
 
-        canvas.on("mouse:up", () => {
-          isPanningRef.current = false;
+          const ds = drawingStateRef.current;
+          if (!ds.active) return;
+
+          const evt = opt.e as MouseEvent;
+          const { x: ex, y: ey } = toWorld(evt);
+          const { startX: sx, startY: sy, tool, color, width, previewObj } = ds;
+
+          // Clear preview + reset state
+          if (previewObj) canvas.remove(previewObj);
+          drawingStateRef.current = {
+            active: false,
+            startX: 0,
+            startY: 0,
+            previewObj: null,
+            tool: "select",
+            color: "#00ffcc",
+            width: 4,
+          };
           canvas.selection = canEdit;
-          canvas.defaultCursor = isSpaceDownRef.current ? "grab" : "default";
+
+          // Ignore micro-clicks (no real drag)
+          const dragDist = Math.hypot(ex - sx, ey - sy);
+          if (dragDist < 4) {
+            canvas.requestRenderAll();
+            return;
+          }
+
+          // Persist & adopt
+          const drawingType: DrawingType = tool as DrawingType;
+          const points = [
+            { x: sx, y: sy },
+            { x: ex, y: ey },
+          ];
+
+          // Build a committed (selectable) version of the shape locally
+          const commonCommitted = {
+            stroke: color,
+            strokeWidth: width,
+            fill: "transparent",
+            selectable: canEdit,
+            evented: canEdit,
+            lockMovementX: true,
+            lockMovementY: true,
+            lockScalingX: true,
+            lockScalingY: true,
+            lockRotation: true,
+            hasControls: false,
+            hasBorders: true,
+            perPixelTargetFind: true,
+            strokeLineCap: "round" as const,
+            strokeLineJoin: "round" as const,
+          };
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let committed: any = null;
+          switch (tool) {
+            case "line":
+              committed = new fabric.Line([sx, sy, ex, ey], commonCommitted);
+              break;
+            case "arrow": {
+              const pathStr = buildArrowPathString(sx, sy, ex, ey);
+              committed = new fabric.Path(pathStr, commonCommitted);
+              break;
+            }
+            case "rectangle":
+              committed = new fabric.Rect({
+                ...commonCommitted,
+                left: Math.min(sx, ex),
+                top: Math.min(sy, ey),
+                width: Math.abs(ex - sx),
+                height: Math.abs(ey - sy),
+              });
+              break;
+            case "circle": {
+              const r = Math.hypot(ex - sx, ey - sy);
+              committed = new fabric.Circle({
+                ...commonCommitted,
+                left: sx,
+                top: sy,
+                radius: r,
+                originX: "center",
+                originY: "center",
+              });
+              break;
+            }
+            default:
+              break;
+          }
+
+          if (!committed) {
+            canvas.requestRenderAll();
+            return;
+          }
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (committed as any).__drawingId = ""; // pending DB id
+          canvas.add(committed);
+          canvas.requestRenderAll();
+
+          // Call server action and stamp the real id on the object
+          cbRef.current.onDrawingCreate
+            ?.({
+              drawingType,
+              points,
+              strokeColor: color,
+              strokeWidth: width,
+            })
+            .then((dbId) => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (committed as any).__drawingId = dbId ?? "";
+            });
         });
 
         // ── Scroll zoom ──────────────────────────────────────────
@@ -511,6 +870,36 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       }
 
       loadMarkers();
+      return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [imageLoaded]);
+
+    // ─── Load initial drawings ────────────────────────────────────────────
+
+    useEffect(() => {
+      if (!imageLoaded || drawingsLoadedRef.current) return;
+      const canvas = fabricRef.current;
+      if (!canvas) return;
+      drawingsLoadedRef.current = true;
+
+      const drawings = initialDrawingsRef.current;
+      if (drawings.length === 0) return;
+
+      let active = true;
+
+      async function loadDrawings() {
+        const fabric = await import("fabric");
+        if (!active || !fabricRef.current) return;
+        const c = fabricRef.current;
+
+        for (const d of drawings) {
+          const obj = createFabricDrawing(fabric, d, canEdit);
+          if (obj) c.add(obj);
+        }
+        c.requestRenderAll();
+      }
+
+      loadDrawings();
       return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [imageLoaded]);
@@ -670,6 +1059,13 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           onFitView={fitView}
           onGridTypeChange={setGridTypeState}
           onGridSizeChange={setGridSizeState}
+          canEdit={canEdit}
+          drawTool={drawTool}
+          drawColor={drawColor}
+          drawStrokeWidth={drawStrokeWidth}
+          onDrawToolChange={setDrawTool}
+          onDrawColorChange={setDrawColor}
+          onDrawStrokeWidthChange={setDrawStrokeWidth}
         />
 
         {/* Canvas container — also the drop zone */}
@@ -703,7 +1099,9 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           <div className="absolute bottom-3 right-3 pointer-events-none">
             <span className="font-mono text-[9px] text-text-muted tracking-widest bg-bg-surface/80 px-2 py-0.5">
               {canEdit
-                ? "SCROLL: ZOOM · SPACE+DRAG: PAN · DEL: REMOVE MARKER"
+                ? drawTool !== "select"
+                  ? `DRAW: ${drawTool.toUpperCase()} · CLICK+DRAG · ESC TOOL = SELECT`
+                  : "SCROLL: ZOOM · SPACE+DRAG: PAN · DEL: REMOVE"
                 : "SCROLL: ZOOM · SPACE+DRAG / MMB: PAN"}
             </span>
           </div>

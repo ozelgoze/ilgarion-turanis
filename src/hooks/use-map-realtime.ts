@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/client";
-import type { TacticalMarker } from "@/types/database";
+import type { TacticalMarker, MapDrawing } from "@/types/database";
 import type { TacticalCanvasRef } from "@/components/canvas/tactical-canvas";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -26,16 +26,17 @@ interface UseMapRealtimeParams {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 /**
- * Subscribes to realtime changes on `tactical_markers` for a given map,
- * applying INSERT/UPDATE/DELETE events to the Fabric canvas via the ref.
+ * Subscribes to realtime changes on `tactical_markers` and `map_drawings`
+ * for a given map, applying INSERT/UPDATE/DELETE events to the Fabric canvas
+ * via the ref.
  *
  * Dedup is handled at the canvas level:
- *   - `hasMarker(id)`  → skip INSERTs we already know about
- *   - `addMarker(...)` → adopts any "pending" fabric object at matching
- *                        coordinates, so the local optimistic drop and the
- *                        incoming server event don't produce duplicates.
+ *   - `hasMarker(id)` / `hasDrawing(id)`  → skip known inserts
+ *   - `addMarker(...)` → adopts any "pending" marker at matching coords
+ *     so the local optimistic drop and the incoming server event don't
+ *     produce duplicates.
  *
- * Also tracks presence of other viewers on the map (callsign + online_at).
+ * Also tracks presence of other viewers on the map.
  */
 export function useMapRealtime({
   mapId,
@@ -119,6 +120,44 @@ export function useMapRealtime({
         const ref = canvasRef.current;
         if (!ref) return;
         ref.removeMarker(id);
+      }
+    );
+
+    // ── Drawing INSERT ───────────────────────────────────────────────────
+    channel.on(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      "postgres_changes" as any,
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "map_drawings",
+        filter: `map_id=eq.${mapId}`,
+      },
+      (payload: { new: MapDrawing }) => {
+        const drawing = payload.new;
+        const ref = canvasRef.current;
+        if (!ref) return;
+        if (ref.hasDrawing(drawing.id)) return;
+        ref.addDrawing(drawing);
+      }
+    );
+
+    // ── Drawing DELETE ───────────────────────────────────────────────────
+    channel.on(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      "postgres_changes" as any,
+      {
+        event: "DELETE",
+        schema: "public",
+        table: "map_drawings",
+        filter: `map_id=eq.${mapId}`,
+      },
+      (payload: { old: { id: string } }) => {
+        const id = payload.old?.id;
+        if (!id) return;
+        const ref = canvasRef.current;
+        if (!ref) return;
+        ref.removeDrawing(id);
       }
     );
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { GridType } from "./tactical-canvas";
+import { DRAW_COLORS, DRAW_WIDTHS, type DrawTool } from "./drawing-helpers";
 
 interface CanvasToolbarProps {
   zoom: number;
@@ -12,6 +13,15 @@ interface CanvasToolbarProps {
   onFitView: () => void;
   onGridTypeChange: (type: GridType) => void;
   onGridSizeChange: (size: number) => void;
+
+  // ─── Drawing controls (only used when canEdit is true) ─────────
+  canEdit?: boolean;
+  drawTool?: DrawTool;
+  drawColor?: string;
+  drawStrokeWidth?: number;
+  onDrawToolChange?: (tool: DrawTool) => void;
+  onDrawColorChange?: (color: string) => void;
+  onDrawStrokeWidthChange?: (width: number) => void;
 }
 
 export default function CanvasToolbar({
@@ -23,6 +33,13 @@ export default function CanvasToolbar({
   onFitView,
   onGridTypeChange,
   onGridSizeChange,
+  canEdit = false,
+  drawTool = "select",
+  drawColor = "#00ffcc",
+  drawStrokeWidth = 3,
+  onDrawToolChange,
+  onDrawColorChange,
+  onDrawStrokeWidthChange,
 }: CanvasToolbarProps) {
   const [gridMenuOpen, setGridMenuOpen] = useState(false);
 
@@ -81,7 +98,6 @@ export default function CanvasToolbar({
               : "border-transparent text-text-dim hover:text-text-primary",
           ].join(" ")}
         >
-          {/* Grid icon */}
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="3" y="3" width="7" height="7" />
             <rect x="14" y="3" width="7" height="7" />
@@ -96,14 +112,11 @@ export default function CanvasToolbar({
 
         {gridMenuOpen && (
           <>
-            {/* Backdrop */}
             <div
               className="fixed inset-0 z-20"
               onClick={() => setGridMenuOpen(false)}
             />
-            {/* Dropdown */}
             <div className="absolute top-full left-0 mt-1 w-52 bg-bg-surface border border-border z-30">
-              {/* Grid type selector */}
               <div className="p-2 border-b border-border">
                 <p className="font-mono text-[9px] tracking-widest text-text-muted uppercase mb-2 px-1">
                   Grid Type
@@ -126,7 +139,6 @@ export default function CanvasToolbar({
                 </div>
               </div>
 
-              {/* Grid size (only when grid is active) */}
               {gridType !== "none" && (
                 <div className="p-2">
                   <p className="font-mono text-[9px] tracking-widest text-text-muted uppercase mb-2 px-1">
@@ -152,11 +164,117 @@ export default function CanvasToolbar({
         )}
       </div>
 
-      <ToolbarDivider />
+      {/* ── Drawing Controls (editors only) ─────────────────── */}
+      {canEdit && (
+        <>
+          <ToolbarDivider />
+
+          <ToolbarGroup>
+            <ToolbarBtn
+              onClick={() => onDrawToolChange?.("select")}
+              title="Select / Move"
+              active={drawTool === "select"}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M3 2 L3 17 L8 13 L11 20 L14 19 L11 12 L17 12 Z" />
+              </svg>
+            </ToolbarBtn>
+
+            <ToolbarBtn
+              onClick={() => onDrawToolChange?.("line")}
+              title="Draw Line"
+              active={drawTool === "line"}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="5" y1="19" x2="19" y2="5" />
+              </svg>
+            </ToolbarBtn>
+
+            <ToolbarBtn
+              onClick={() => onDrawToolChange?.("arrow")}
+              title="Draw Arrow (line of advance)"
+              active={drawTool === "arrow"}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="5" y1="19" x2="17" y2="7" />
+                <polyline points="11 6 17 6 17 12" />
+              </svg>
+            </ToolbarBtn>
+
+            <ToolbarBtn
+              onClick={() => onDrawToolChange?.("rectangle")}
+              title="Draw Rectangle (perimeter)"
+              active={drawTool === "rectangle"}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="4" y="5" width="16" height="14" />
+              </svg>
+            </ToolbarBtn>
+
+            <ToolbarBtn
+              onClick={() => onDrawToolChange?.("circle")}
+              title="Draw Circle (AO)"
+              active={drawTool === "circle"}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="8" />
+              </svg>
+            </ToolbarBtn>
+          </ToolbarGroup>
+
+          <ToolbarDivider />
+
+          {/* Color swatches */}
+          <ToolbarGroup>
+            {DRAW_COLORS.map((c) => (
+              <button
+                key={c.value}
+                onClick={() => onDrawColorChange?.(c.value)}
+                title={c.label}
+                className={[
+                  "w-5 h-5 mx-0.5 border transition-all",
+                  drawColor === c.value
+                    ? "border-white scale-110"
+                    : "border-border/50 hover:border-text-dim",
+                ].join(" ")}
+                style={{ backgroundColor: c.value }}
+              />
+            ))}
+          </ToolbarGroup>
+
+          <ToolbarDivider />
+
+          {/* Stroke width presets */}
+          <ToolbarGroup>
+            {DRAW_WIDTHS.map((w) => (
+              <button
+                key={w}
+                onClick={() => onDrawStrokeWidthChange?.(w)}
+                title={`Stroke ${w}px`}
+                className={[
+                  "w-7 h-7 flex items-center justify-center transition-colors",
+                  drawStrokeWidth === w
+                    ? "text-accent bg-accent/10"
+                    : "text-text-dim hover:text-text-primary hover:bg-bg-elevated",
+                ].join(" ")}
+              >
+                <div
+                  className="rounded-full"
+                  style={{
+                    width: `${w * 2}px`,
+                    height: `${w * 2}px`,
+                    backgroundColor: "currentColor",
+                  }}
+                />
+              </button>
+            ))}
+          </ToolbarGroup>
+        </>
+      )}
 
       {/* ── Status Label ──────────────────────────────────── */}
       <div className="ml-auto flex items-center gap-3">
-        <span className="font-mono text-[9px] text-text-muted tracking-widest uppercase hidden sm:block">
+        <span className="font-mono text-[9px] text-text-muted tracking-widest uppercase hidden md:block">
           Tactical Map Engine v7
         </span>
       </div>
