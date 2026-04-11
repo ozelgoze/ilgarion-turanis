@@ -17,7 +17,7 @@ export default function TopBar({ callsign }: TopBarProps) {
         </div>
         <div className="w-px h-3 bg-border" />
         <span className="font-mono text-[10px] tracking-widest text-text-muted uppercase">
-          Turanis Sector · Real-Time
+          Ilgarion Turanis [SCG] · Real-Time
         </span>
       </div>
 

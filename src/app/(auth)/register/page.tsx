@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import { registerAction, type AuthActionResult } from "@/app/actions/auth";
-import MtcLogo from "@/components/mtc-logo";
+import AppLogo from "@/components/mtc-logo";
 
 const initialState: AuthActionResult = {};
 
@@ -17,15 +17,7 @@ export default function RegisterPage() {
     <div className="w-full max-w-md">
       {/* Header */}
       <div className="flex flex-col items-center mb-8">
-        <MtcLogo />
-        <div className="mt-4 text-center">
-          <p className="font-mono text-xs tracking-[0.3em] text-text-dim uppercase">
-            Ilgarion Command · Turanis Sector
-          </p>
-          <p className="font-mono text-[10px] tracking-[0.2em] text-text-muted mt-1 uppercase">
-            New Operative Registration
-          </p>
-        </div>
+        <AppLogo />
       </div>
 
       {/* Register Panel */}
@@ -160,7 +152,7 @@ export default function RegisterPage() {
           ENCRYPTED CHANNEL
         </span>
         <span className="font-mono text-[9px] text-text-muted tracking-widest">
-          MTC-SYS-ENROLL
+          UEE-SYS-ENROLL
         </span>
       </div>
     </div>

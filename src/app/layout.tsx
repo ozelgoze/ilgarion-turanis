@@ -15,8 +15,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MYTHRA TACTICAL COMMAND",
-  description: "Ilgarion Command — Tactical Operations & Briefing System",
+  title: "UEE ATAK APP",
+  description: "Ilgarion Turanis [SCG] — UEE Tactical Operations & Briefing System",
 };
 
 export default function RootLayout({

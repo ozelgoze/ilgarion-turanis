@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import MtcLogo from "./mtc-logo";
+import AppLogo from "./mtc-logo";
 
 interface NavItem {
   href: string;
@@ -62,7 +62,7 @@ export default function Sidebar() {
     <aside className="w-16 shrink-0 bg-bg-surface border-r border-border flex flex-col items-center py-4 gap-1">
       {/* Logo */}
       <Link href="/dashboard" className="mb-4 mt-1" aria-label="MTC Home">
-        <MtcLogo size="sm" />
+        <AppLogo size="sm" />
       </Link>
 
       {/* Divider */}
