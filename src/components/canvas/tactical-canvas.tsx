@@ -17,6 +17,16 @@ export interface TacticalCanvasRef {
   fitView: () => void;
   setGridType: (type: GridType) => void;
   setGridSize: (size: number) => void;
+  // ─── Realtime marker manipulation ─────────────────
+  /** Returns true if a marker with this DB id already exists on the canvas. */
+  hasMarker: (markerId: string) => boolean;
+  /** Adds a marker from an external source (realtime event). Adopts any
+   *  pending (no-id-yet) fabric object at matching coords to avoid duplicates. */
+  addMarker: (marker: TacticalMarker) => void;
+  /** Updates the position of a marker already on the canvas. */
+  updateMarkerPos: (markerId: string, x: number, y: number) => void;
+  /** Removes a marker from the canvas by DB id. */
+  removeMarker: (markerId: string) => void;
 }
 
 export type GridType = "none" | "square" | "hex";
@@ -205,8 +215,86 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
         fitView,
         setGridType: (t: GridType) => setGridTypeState(t),
         setGridSize: (s: number) => setGridSizeState(s),
+
+        // ─── Realtime marker manipulation ─────────────────────────
+        hasMarker: (markerId: string) => {
+          const c = fabricRef.current;
+          if (!c || !markerId) return false;
+          return c.getObjects().some((obj) => getMarkerId(obj) === markerId);
+        },
+
+        addMarker: (marker: TacticalMarker) => {
+          const c = fabricRef.current;
+          if (!c) return;
+
+          // Already present? no-op
+          if (c.getObjects().some((o) => getMarkerId(o) === marker.id)) return;
+
+          // Race-recovery: adopt a pending (empty id) fabric object at
+          // matching coordinates. This happens when a user drops a marker
+          // and the realtime INSERT event arrives before / races with the
+          // server-action response.
+          const pending = c.getObjects().find((o) => {
+            if (getMarkerId(o) !== "") return false;
+            const dx = (o.left ?? 0) - marker.x;
+            const dy = (o.top ?? 0) - marker.y;
+            return dx * dx + dy * dy < 1; // within 1px
+          });
+          if (pending) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (pending as any).__markerId = marker.id;
+            return;
+          }
+
+          // Otherwise load & add a fresh marker image
+          import("fabric").then(async (fabric) => {
+            if (!fabricRef.current) return;
+            const dataUrl = getNatoDataUrl(marker.marker_type, marker.affiliation);
+            const img = await fabric.FabricImage.fromURL(dataUrl);
+            if (!fabricRef.current) return;
+            img.set({
+              left: marker.x,
+              top: marker.y,
+              originX: "center",
+              originY: "center",
+              selectable: canEdit,
+              evented: canEdit,
+              hasControls: false,
+            });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerId = marker.id;
+            fabricRef.current.add(img);
+            fabricRef.current.requestRenderAll();
+          });
+        },
+
+        updateMarkerPos: (markerId: string, x: number, y: number) => {
+          const c = fabricRef.current;
+          if (!c) return;
+          const target = c
+            .getObjects()
+            .find((obj) => getMarkerId(obj) === markerId);
+          if (!target) return;
+          // Don't fight an in-progress user drag of this same object
+          if (c.getActiveObject() === target) return;
+          target.set({ left: x, top: y });
+          target.setCoords();
+          c.requestRenderAll();
+        },
+
+        removeMarker: (markerId: string) => {
+          const c = fabricRef.current;
+          if (!c) return;
+          const target = c
+            .getObjects()
+            .find((obj) => getMarkerId(obj) === markerId);
+          if (!target) return;
+          if (c.getActiveObject() === target) c.discardActiveObject();
+          c.remove(target);
+          c.requestRenderAll();
+        },
       }),
-      [fitView]
+      [fitView, canEdit]
     );
 
     // ─── Canvas initialisation ────────────────────────────────────────────

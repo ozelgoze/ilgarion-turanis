@@ -1,9 +1,10 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getMapWithSignedUrl } from "@/app/actions/maps";
 import { getTeamInfo } from "@/app/actions/maps";
 import { getMapMarkers } from "@/app/actions/markers";
 import { canEdit as checkCanEdit } from "@/types/database";
+import { createClient } from "@/utils/supabase/server";
 import CanvasClient from "./canvas-client";
 import type { GridType } from "@/components/canvas/tactical-canvas";
 
@@ -13,6 +14,20 @@ interface PageProps {
 
 export default async function MapCanvasPage({ params }: PageProps) {
   const { mapId } = await params;
+
+  // Current authenticated user + profile (needed for presence)
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("callsign")
+    .eq("id", user.id)
+    .single();
+  const currentCallsign = profile?.callsign ?? "OPERATIVE";
 
   const map = await getMapWithSignedUrl(mapId);
   if (!map) notFound();
@@ -111,6 +126,8 @@ export default async function MapCanvasPage({ params }: PageProps) {
         initialGridSize={map.grid_size}
         initialMarkers={markers}
         canEdit={userCanEdit}
+        currentUserId={user.id}
+        currentCallsign={currentCallsign}
       />
     </div>
   );
