@@ -1,0 +1,51 @@
+import { logoutAction } from "@/app/actions/auth";
+
+interface TopBarProps {
+  callsign: string;
+}
+
+export default function TopBar({ callsign }: TopBarProps) {
+  return (
+    <header className="h-10 shrink-0 bg-bg-surface border-b border-border flex items-center justify-between px-4">
+      {/* Left: Status indicators */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+          <span className="font-mono text-[10px] tracking-widest text-text-dim uppercase">
+            System Online
+          </span>
+        </div>
+        <div className="w-px h-3 bg-border" />
+        <span className="font-mono text-[10px] tracking-widest text-text-muted uppercase">
+          Turanis Sector · Real-Time
+        </span>
+      </div>
+
+      {/* Right: User + Logout */}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 border border-accent/30 bg-accent/10 flex items-center justify-center">
+            <span className="font-mono text-[9px] text-accent font-bold">
+              {callsign.charAt(0)}
+            </span>
+          </div>
+          <span className="font-mono text-[11px] tracking-widest text-text-primary uppercase">
+            {callsign}
+          </span>
+        </div>
+
+        <div className="w-px h-3 bg-border" />
+
+        {/* Logout form */}
+        <form action={logoutAction}>
+          <button
+            type="submit"
+            className="font-mono text-[10px] tracking-widest text-text-muted hover:text-danger uppercase transition-colors"
+          >
+            DISCONNECT
+          </button>
+        </form>
+      </div>
+    </header>
+  );
+}
