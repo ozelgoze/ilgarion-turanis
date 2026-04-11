@@ -5,82 +5,130 @@ export default function AppLogo({ size = "md" }: { size?: "sm" | "md" | "lg" }) 
 
   return (
     <div className="flex flex-col items-center gap-2">
-      {/* UEE Eagle */}
+      {/* UEE Eagle — heraldic front-facing eagle, head right */}
       <svg
         width={dims}
         height={dims}
-        viewBox="0 0 64 64"
+        viewBox="0 0 100 100"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         aria-label="UEE Logo"
       >
-        {/* Outer ring */}
-        <circle cx="32" cy="32" r="30" stroke="#00ffcc" strokeWidth="0.8" opacity="0.45" />
-        <circle cx="32" cy="32" r="27" stroke="#00ffcc" strokeWidth="0.4" opacity="0.2"  />
+        {/* ── OUTER RING ────────────────────────────────── */}
+        <circle cx="50" cy="50" r="48" stroke="#00ffcc" strokeWidth="1.2" opacity="0.35" />
+        <circle cx="50" cy="50" r="44" stroke="#00ffcc" strokeWidth="0.5" opacity="0.15" />
 
-        {/* ── LEFT WING ───────────────────────── */}
-        {/* Main wing shape */}
+        {/* ── LEFT WING (viewer left, eagle's right) ──────
+            Sweeps up and out from body, layered feathers  */}
+        {/* Wing base / covert */}
         <path
-          d="M28 27 L21 20 L11 18 L4 23 L10 26 L4 31 L12 29 L17 33 L24 28 Z"
-          stroke="#00ffcc" strokeWidth="1.2" strokeLinejoin="round"
-          fill="rgba(0,255,204,0.06)"
+          d="M42 46 L30 36 L16 30 L6  33 L10 40 L6  48 L14 44 L22 50 L34 44 Z"
+          stroke="#00ffcc" strokeWidth="1.4" strokeLinejoin="round"
+          fill="rgba(0,255,204,0.07)"
         />
-        {/* Feather detail lines */}
-        <line x1="18" y1="22" x2="13" y2="29" stroke="#00ffcc" strokeWidth="0.5" opacity="0.45" />
-        <line x1="10" y1="25" x2="6"  y2="31" stroke="#00ffcc" strokeWidth="0.5" opacity="0.35" />
-
-        {/* ── RIGHT WING (mirror) ──────────────── */}
+        {/* Primary feathers fanning down-left */}
         <path
-          d="M36 27 L43 20 L53 18 L60 23 L54 26 L60 31 L52 29 L47 33 L40 28 Z"
-          stroke="#00ffcc" strokeWidth="1.2" strokeLinejoin="round"
-          fill="rgba(0,255,204,0.06)"
+          d="M22 50 L10 58 L8  65" stroke="#00ffcc" strokeWidth="1.1"
+          strokeLinecap="round" opacity="0.75"
         />
-        <line x1="46" y1="22" x2="51" y2="29" stroke="#00ffcc" strokeWidth="0.5" opacity="0.45" />
-        <line x1="54" y1="25" x2="58" y2="31" stroke="#00ffcc" strokeWidth="0.5" opacity="0.35" />
-
-        {/* ── BODY / SHIELD ────────────────────── */}
         <path
-          d="M27 20 L32 14 L37 20 L37 41 L32 48 L27 41 Z"
-          stroke="#00ffcc" strokeWidth="1.2"
-          fill="rgba(0,255,204,0.08)"
+          d="M28 53 L18 62 L16 70" stroke="#00ffcc" strokeWidth="1.1"
+          strokeLinecap="round" opacity="0.65"
         />
-        {/* Shield center line */}
-        <line x1="32" y1="20" x2="32" y2="41" stroke="#00ffcc" strokeWidth="0.5" opacity="0.3" />
-
-        {/* ── HEAD ─────────────────────────────── */}
         <path
-          d="M28 10 L33 7 L38 10 L37 15 L32 16 L27 15 Z"
-          stroke="#00ffcc" strokeWidth="1.2"
-          fill="rgba(0,255,204,0.13)"
+          d="M34 54 L26 64 L25 72" stroke="#00ffcc" strokeWidth="1.1"
+          strokeLinecap="round" opacity="0.55"
         />
+        {/* Feather split lines on wing covert */}
+        <line x1="22" y1="36" x2="16" y2="44" stroke="#00ffcc" strokeWidth="0.6" opacity="0.4" />
+        <line x1="12" y1="37" x2="7"  y2="44" stroke="#00ffcc" strokeWidth="0.6" opacity="0.3" />
 
-        {/* ── BEAK (facing right) ───────────────── */}
+        {/* ── RIGHT WING (viewer right, eagle's left) ─────*/}
         <path
-          d="M38 10 L45 12 L38 14 Z"
-          stroke="#00ffcc" strokeWidth="1"
-          fill="rgba(0,255,204,0.2)"
+          d="M58 46 L70 36 L84 30 L94 33 L90 40 L94 48 L86 44 L78 50 L66 44 Z"
+          stroke="#00ffcc" strokeWidth="1.4" strokeLinejoin="round"
+          fill="rgba(0,255,204,0.07)"
         />
-
-        {/* ── EYE ──────────────────────────────── */}
-        <circle cx="34" cy="11" r="1.5" fill="#00ffcc" opacity="0.9" />
-
-        {/* ── TALONS ───────────────────────────── */}
-        {/* Left foot */}
         <path
-          d="M29 44 L25 51 L27 52 L30 49 L32 52"
-          stroke="#00ffcc" strokeWidth="1" strokeLinecap="round" fill="none"
+          d="M78 50 L90 58 L92 65" stroke="#00ffcc" strokeWidth="1.1"
+          strokeLinecap="round" opacity="0.75"
         />
-        {/* Right foot */}
         <path
-          d="M35 44 L39 51 L37 52 L34 49 L32 52"
-          stroke="#00ffcc" strokeWidth="1" strokeLinecap="round" fill="none"
+          d="M72 53 L82 62 L84 70" stroke="#00ffcc" strokeWidth="1.1"
+          strokeLinecap="round" opacity="0.65"
+        />
+        <path
+          d="M66 54 L74 64 L75 72" stroke="#00ffcc" strokeWidth="1.1"
+          strokeLinecap="round" opacity="0.55"
+        />
+        <line x1="78" y1="36" x2="84" y2="44" stroke="#00ffcc" strokeWidth="0.6" opacity="0.4" />
+        <line x1="88" y1="37" x2="93" y2="44" stroke="#00ffcc" strokeWidth="0.6" opacity="0.3" />
+
+        {/* ── BODY / SHIELD ─────────────────────────────── */}
+        <path
+          d="M42 38 L50 28 L58 38 L58 65 L54 74 L50 78 L46 74 L42 65 Z"
+          stroke="#00ffcc" strokeWidth="1.5"
+          fill="rgba(0,255,204,0.09)"
+        />
+        {/* Shield center divide */}
+        <line x1="50" y1="38" x2="50" y2="68" stroke="#00ffcc" strokeWidth="0.6" opacity="0.25" />
+        {/* Shield horizontal bar */}
+        <line x1="43" y1="52" x2="57" y2="52" stroke="#00ffcc" strokeWidth="0.6" opacity="0.25" />
+
+        {/* ── NECK ──────────────────────────────────────── */}
+        <path
+          d="M45 28 L50 20 L55 28 L53 34 L47 34 Z"
+          stroke="#00ffcc" strokeWidth="1.3"
+          fill="rgba(0,255,204,0.12)"
         />
 
-        {/* ── RING DOTS (UEE decoration) ────────── */}
-        <circle cx="32" cy="3"  r="1" fill="#00ffcc" opacity="0.5" />
-        <circle cx="32" cy="61" r="1" fill="#00ffcc" opacity="0.5" />
-        <circle cx="3"  cy="32" r="1" fill="#00ffcc" opacity="0.5" />
-        <circle cx="61" cy="32" r="1" fill="#00ffcc" opacity="0.5" />
+        {/* ── HEAD (facing right) ───────────────────────── */}
+        <path
+          d="M46 14 L52 10 L59 13 L60 20 L55 24 L48 23 L44 19 Z"
+          stroke="#00ffcc" strokeWidth="1.3"
+          fill="rgba(0,255,204,0.14)"
+        />
+
+        {/* ── BEAK (hook, pointing right) ───────────────── */}
+        <path
+          d="M59 14 L68 17 L65 21 L59 19 Z"
+          stroke="#00ffcc" strokeWidth="1.1"
+          fill="rgba(0,255,204,0.22)"
+        />
+
+        {/* ── EYE ───────────────────────────────────────── */}
+        <circle cx="54" cy="17" r="2" fill="#00ffcc" opacity="0.9" />
+        <circle cx="54" cy="17" r="3.5" stroke="#00ffcc" strokeWidth="0.7" opacity="0.4" fill="none" />
+
+        {/* ── CREST / HEAD FEATHERS ─────────────────────── */}
+        <path
+          d="M50 10 L48 4 M50 10 L52 3 M50 10 L46 6"
+          stroke="#00ffcc" strokeWidth="0.9" strokeLinecap="round" opacity="0.6"
+        />
+
+        {/* ── TAIL FEATHERS ─────────────────────────────── */}
+        <path
+          d="M46 74 L42 82 L45 84 M50 78 L50 86 M54 74 L58 82 L55 84"
+          stroke="#00ffcc" strokeWidth="1" strokeLinecap="round" opacity="0.7"
+        />
+
+        {/* ── LEFT TALON ────────────────────────────────── */}
+        <path
+          d="M44 68 L40 76 M40 76 L36 80 M40 76 L38 82 M40 76 L43 82"
+          stroke="#00ffcc" strokeWidth="0.9" strokeLinecap="round" opacity="0.75"
+        />
+
+        {/* ── RIGHT TALON ───────────────────────────────── */}
+        <path
+          d="M56 68 L60 76 M60 76 L64 80 M60 76 L62 82 M60 76 L57 82"
+          stroke="#00ffcc" strokeWidth="0.9" strokeLinecap="round" opacity="0.75"
+        />
+
+        {/* ── CARDINAL DOTS (UEE insignia detail) ───────── */}
+        <circle cx="50" cy="2"  r="1.2" fill="#00ffcc" opacity="0.5" />
+        <circle cx="50" cy="98" r="1.2" fill="#00ffcc" opacity="0.5" />
+        <circle cx="2"  cy="50" r="1.2" fill="#00ffcc" opacity="0.5" />
+        <circle cx="98" cy="50" r="1.2" fill="#00ffcc" opacity="0.5" />
       </svg>
 
       {/* Wordmark */}

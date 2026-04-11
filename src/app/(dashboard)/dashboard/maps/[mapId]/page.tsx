@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getMapWithSignedUrl } from "@/app/actions/maps";
+import { getTeamInfo } from "@/app/actions/maps";
+import { getMapMarkers } from "@/app/actions/markers";
+import { canEdit as checkCanEdit } from "@/types/database";
 import CanvasClient from "./canvas-client";
 import type { GridType } from "@/components/canvas/tactical-canvas";
 
@@ -10,8 +13,8 @@ interface PageProps {
 
 export default async function MapCanvasPage({ params }: PageProps) {
   const { mapId } = await params;
-  const map = await getMapWithSignedUrl(mapId);
 
+  const map = await getMapWithSignedUrl(mapId);
   if (!map) notFound();
 
   if (!map.signedUrl) {
@@ -29,6 +32,14 @@ export default async function MapCanvasPage({ params }: PageProps) {
     );
   }
 
+  // Fetch team role + markers in parallel
+  const [teamInfo, markers] = await Promise.all([
+    getTeamInfo(map.team_id),
+    getMapMarkers(mapId),
+  ]);
+
+  const userCanEdit = teamInfo ? checkCanEdit(teamInfo.my_role) : false;
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Canvas Top Bar */}
@@ -37,7 +48,10 @@ export default async function MapCanvasPage({ params }: PageProps) {
           href={`/dashboard/teams/${map.team_id}`}
           className="flex items-center gap-1.5 font-mono text-[10px] tracking-widest text-text-muted hover:text-text-dim transition-colors uppercase"
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            width="10" height="10" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" strokeWidth="2.5"
+          >
             <line x1="19" y1="12" x2="5" y2="12" />
             <polyline points="12 19 5 12 12 5" />
           </svg>
@@ -53,20 +67,50 @@ export default async function MapCanvasPage({ params }: PageProps) {
             ? `${map.grid_type} Grid · ${map.grid_size}px`
             : "No Grid"}
         </span>
-        <div className="ml-auto flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-          <span className="font-mono text-[9px] text-text-muted tracking-widest uppercase">
-            Live
-          </span>
-        </div>
+
+        {/* Marker count */}
+        {markers.length > 0 && (
+          <>
+            <div className="w-px h-4 bg-border" />
+            <span className="font-mono text-[9px] text-text-muted tracking-widest uppercase">
+              {markers.length} Marker{markers.length !== 1 ? "s" : ""}
+            </span>
+          </>
+        )}
+
+        {/* Role badge */}
+        {teamInfo && (
+          <div className="ml-auto flex items-center gap-2">
+            <span
+              className="font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border"
+              style={{
+                color: userCanEdit ? "#00ffcc" : "#45A29E",
+                borderColor: userCanEdit
+                  ? "rgba(0,255,204,0.3)"
+                  : "rgba(69,162,158,0.3)",
+                backgroundColor: userCanEdit
+                  ? "rgba(0,255,204,0.05)"
+                  : "rgba(69,162,158,0.05)",
+              }}
+            >
+              {teamInfo.my_role.toUpperCase()}
+            </span>
+            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+            <span className="font-mono text-[9px] text-text-muted tracking-widest uppercase">
+              Live
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Canvas Area — client component handles Fabric.js */}
+      {/* Canvas Area */}
       <CanvasClient
         mapId={mapId}
         imageUrl={map.signedUrl}
         initialGridType={map.grid_type as GridType}
         initialGridSize={map.grid_size}
+        initialMarkers={markers}
+        canEdit={userCanEdit}
       />
     </div>
   );

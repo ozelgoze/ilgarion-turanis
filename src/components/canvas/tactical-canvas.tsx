@@ -10,6 +10,8 @@ import {
 } from "react";
 import type { Canvas as FabricCanvasType } from "fabric";
 import CanvasToolbar from "./canvas-toolbar";
+import { getNatoDataUrl } from "./nato-icons";
+import type { TacticalMarker, MarkerType, MarkerAffiliation } from "@/types/database";
 
 export interface TacticalCanvasRef {
   fitView: () => void;
@@ -24,13 +26,29 @@ interface TacticalCanvasProps {
   imageUrl: string;
   initialGridType?: GridType;
   initialGridSize?: number;
+  // ─── Marker props ──────────────────────────────────
+  initialMarkers?: TacticalMarker[];
+  canEdit?: boolean;
+  /** Rendered as an absolute overlay inside the canvas area */
+  palette?: React.ReactNode;
+  /** Called on drop; resolves to the new marker's DB id (or "" on error) */
+  onMarkerDrop?: (
+    type: MarkerType,
+    affiliation: MarkerAffiliation,
+    x: number,
+    y: number
+  ) => Promise<string>;
+  /** Called when a marker is dragged to a new position */
+  onMarkerMoved?: (markerId: string, x: number, y: number) => void;
+  /** Called when Delete/Backspace is pressed with a marker selected */
+  onMarkerDeleted?: (markerId: string) => void;
 }
 
 const GRID_COLOR = "rgba(0, 255, 204, 0.12)";
 const GRID_STROKE = 0.5;
 const CANVAS_BG = "#060708";
 
-// ─── Grid Drawing Helpers ────────────────────────────────────────────────────
+// ─── Grid Helpers ─────────────────────────────────────────────────────────────
 
 function buildSquareGrid(
   fabric: typeof import("fabric"),
@@ -52,7 +70,7 @@ function buildSquareGrid(
         evented: false,
       })
     );
-    void Point; // suppress unused import warning
+    void Point;
   }
   for (let r = 0; r <= rows; r++) {
     lines.push(
@@ -109,18 +127,35 @@ function buildHexGrid(
   return hexes;
 }
 
+// ─── Custom property helpers ──────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getMarkerId(obj: any): string {
+  return (obj?.__markerId as string) ?? "";
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line react/display-name
 const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
   function TacticalCanvas(
-    { mapId, imageUrl, initialGridType = "none", initialGridSize = 50 },
+    {
+      mapId,
+      imageUrl,
+      initialGridType = "none",
+      initialGridSize = 50,
+      initialMarkers = [],
+      canEdit = false,
+      palette,
+      onMarkerDrop,
+      onMarkerMoved,
+      onMarkerDeleted,
+    },
     ref
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasElRef = useRef<HTMLCanvasElement>(null);
     const fabricRef = useRef<FabricCanvasType | null>(null);
-    // Use any[] to avoid complex Fabric type gymnastics for the grid objects array
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const gridObjectsRef = useRef<any[]>([]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -129,13 +164,21 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
     const lastPosRef = useRef({ x: 0, y: 0 });
     const isSpaceDownRef = useRef(false);
     const cleanupRef = useRef<(() => void) | null>(null);
+    const markersLoadedRef = useRef(false);
+    const initialMarkersRef = useRef(initialMarkers);
+
+    // Keep callbacks in a ref so event handlers always see the latest version
+    const cbRef = useRef({ onMarkerDrop, onMarkerMoved, onMarkerDeleted });
+    useEffect(() => {
+      cbRef.current = { onMarkerDrop, onMarkerMoved, onMarkerDeleted };
+    }, [onMarkerDrop, onMarkerMoved, onMarkerDeleted]);
 
     const [gridType, setGridTypeState] = useState<GridType>(initialGridType);
     const [gridSize, setGridSizeState] = useState(initialGridSize);
     const [zoom, setZoom] = useState(1);
     const [imageLoaded, setImageLoaded] = useState(false);
 
-    // ─── Fit-view ──────────────────────────────────────────────────────
+    // ─── Fit-view ────────────────────────────────────────────────────────
 
     const fitView = useCallback(() => {
       const canvas = fabricRef.current;
@@ -166,11 +209,12 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       [fitView]
     );
 
-    // ─── Canvas initialisation ─────────────────────────────────────────
+    // ─── Canvas initialisation ────────────────────────────────────────────
 
     useEffect(() => {
       if (!canvasElRef.current || !containerRef.current) return;
       let disposed = false;
+      markersLoadedRef.current = false;
 
       async function init() {
         const fabric = await import("fabric");
@@ -183,18 +227,30 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           width: w,
           height: h,
           backgroundColor: CANVAS_BG,
-          selection: false,
+          selection: canEdit,
           preserveObjectStacking: true,
         });
         fabricRef.current = canvas;
 
-        // ── Keyboard pan ──────────────────────────────────────────
-
+        // ── Keyboard: pan (Space) + delete marker ──────────────────
         const onKeyDown = (e: KeyboardEvent) => {
           if (e.code === "Space" && !isSpaceDownRef.current) {
             isSpaceDownRef.current = true;
             canvas.defaultCursor = "grab";
             canvas.requestRenderAll();
+          }
+          if (
+            (e.code === "Delete" || e.code === "Backspace") &&
+            canEdit
+          ) {
+            const active = canvas.getActiveObject();
+            if (!active) return;
+            const markerId = getMarkerId(active);
+            if (!markerId) return;
+            canvas.remove(active);
+            canvas.discardActiveObject();
+            canvas.requestRenderAll();
+            cbRef.current.onMarkerDeleted?.(markerId);
           }
         };
         const onKeyUp = (e: KeyboardEvent) => {
@@ -207,8 +263,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
         window.addEventListener("keydown", onKeyDown);
         window.addEventListener("keyup", onKeyUp);
 
-        // ── Mouse pan ─────────────────────────────────────────────
-
+        // ── Mouse pan ────────────────────────────────────────────
         canvas.on("mouse:down", (opt) => {
           const evt = opt.e as MouseEvent;
           if (evt.button === 1 || isSpaceDownRef.current) {
@@ -236,12 +291,11 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
 
         canvas.on("mouse:up", () => {
           isPanningRef.current = false;
-          canvas.selection = true;
+          canvas.selection = canEdit;
           canvas.defaultCursor = isSpaceDownRef.current ? "grab" : "default";
         });
 
-        // ── Scroll-wheel zoom ─────────────────────────────────────
-
+        // ── Scroll zoom ──────────────────────────────────────────
         canvas.on("mouse:wheel", (opt) => {
           const { e } = opt;
           const delta = (e as WheelEvent).deltaY;
@@ -258,8 +312,16 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           e.stopPropagation();
         });
 
-        // ── Load background image ─────────────────────────────────
+        // ── Marker move: save on object:modified ─────────────────
+        canvas.on("object:modified", (opt) => {
+          if (!canEdit || !opt.target) return;
+          const markerId = getMarkerId(opt.target);
+          if (!markerId) return;
+          const { left = 0, top = 0 } = opt.target;
+          cbRef.current.onMarkerMoved?.(markerId, left, top);
+        });
 
+        // ── Background image ────────────────────────────────────
         try {
           const img = await fabric.FabricImage.fromURL(imageUrl, {
             crossOrigin: "anonymous",
@@ -272,7 +334,6 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           bgImageRef.current = img;
           setImageLoaded(true);
 
-          // Fit on load
           const iw = img.width ?? 1;
           const ih = img.height ?? 1;
           const pad = 40;
@@ -290,8 +351,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           setImageLoaded(true);
         }
 
-        // ── Resize observer ────────────────────────────────────────
-
+        // ── Resize observer ─────────────────────────────────────
         const ro = new ResizeObserver((entries) => {
           const { width: rw, height: rh } = entries[0].contentRect;
           canvas.setDimensions({ width: rw, height: rh });
@@ -320,7 +380,54 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [imageUrl, mapId]);
 
-    // ─── Grid re-render ────────────────────────────────────────────────
+    // ─── Load initial markers ─────────────────────────────────────────────
+
+    useEffect(() => {
+      if (!imageLoaded || markersLoadedRef.current) return;
+      const canvas = fabricRef.current;
+      if (!canvas) return;
+      markersLoadedRef.current = true;
+
+      const markers = initialMarkersRef.current;
+      if (markers.length === 0) return;
+
+      let active = true;
+
+      async function loadMarkers() {
+        const fabric = await import("fabric");
+        if (!active || !fabricRef.current) return;
+        const c = fabricRef.current;
+
+        const imgs = await Promise.all(
+          markers.map(async (m) => {
+            const dataUrl = getNatoDataUrl(m.marker_type, m.affiliation);
+            const img = await fabric.FabricImage.fromURL(dataUrl);
+            img.set({
+              left: m.x,
+              top: m.y,
+              originX: "center",
+              originY: "center",
+              selectable: canEdit,
+              evented: canEdit,
+              hasControls: false,
+            });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerId = m.id;
+            return img;
+          })
+        );
+
+        if (!active || !fabricRef.current) return;
+        for (const img of imgs) c.add(img);
+        c.requestRenderAll();
+      }
+
+      loadMarkers();
+      return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [imageLoaded]);
+
+    // ─── Grid re-render ───────────────────────────────────────────────────
 
     useEffect(() => {
       const canvas = fabricRef.current;
@@ -332,7 +439,6 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
         if (!active || !fabricRef.current) return;
         const c = fabricRef.current;
 
-        // Remove old grid
         for (const obj of gridObjectsRef.current) c.remove(obj);
         gridObjectsRef.current = [];
 
@@ -341,7 +447,6 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           return;
         }
 
-        // Build large enough to cover canvas at any pan position
         const cw = c.getWidth() * 4;
         const ch = c.getHeight() * 4;
         const offset = -c.getWidth();
@@ -352,9 +457,11 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             : buildHexGrid(fabric, cw, ch, gridSize);
 
         for (const obj of objects) {
-          obj.set({ left: (obj.left ?? 0) + offset, top: (obj.top ?? 0) + offset });
+          obj.set({
+            left: (obj.left ?? 0) + offset,
+            top: (obj.top ?? 0) + offset,
+          });
           c.add(obj);
-          // Keep grid above bg but below markers: index 1
           if (bgImageRef.current) c.moveObjectTo(obj, 1);
         }
 
@@ -366,7 +473,87 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       return () => { active = false; };
     }, [gridType, gridSize, imageLoaded]);
 
-    // ─── Render ────────────────────────────────────────────────────────
+    // ─── Drag-and-drop handlers ───────────────────────────────────────────
+
+    const handleDragOver = useCallback(
+      (e: React.DragEvent<HTMLDivElement>) => {
+        if (!canEdit) return;
+        if (e.dataTransfer.types.includes("application/x-nato-marker")) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }
+      },
+      [canEdit]
+    );
+
+    const handleDrop = useCallback(
+      (e: React.DragEvent<HTMLDivElement>) => {
+        if (!canEdit) return;
+        e.preventDefault();
+
+        const raw = e.dataTransfer.getData("application/x-nato-marker");
+        if (!raw) return;
+
+        let parsed: { type: MarkerType; affiliation: MarkerAffiliation };
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          return;
+        }
+        const { type, affiliation } = parsed;
+
+        const canvas = fabricRef.current;
+        const canvasEl = canvasElRef.current;
+        if (!canvas || !canvasEl) return;
+
+        // Convert client coords → canvas world coords
+        const rect = canvasEl.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        const offsetY = e.clientY - rect.top;
+        const vpt = canvas.viewportTransform;
+        const worldX = (offsetX - vpt[4]) / vpt[0];
+        const worldY = (offsetY - vpt[5]) / vpt[3];
+
+        // Place optimistically on canvas
+        async function place() {
+          const fabric = await import("fabric");
+          if (!fabricRef.current) return;
+          const c = fabricRef.current;
+
+          const dataUrl = getNatoDataUrl(type, affiliation);
+          const img = await fabric.FabricImage.fromURL(dataUrl);
+          img.set({
+            left: worldX,
+            top: worldY,
+            originX: "center",
+            originY: "center",
+            selectable: true,
+            evented: true,
+            hasControls: false,
+          });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (img as any).__markerId = ""; // pending DB confirmation
+          c.add(img);
+          c.setActiveObject(img);
+          c.requestRenderAll();
+
+          // Persist and get DB id
+          const dbId = (await cbRef.current.onMarkerDrop?.(
+            type,
+            affiliation,
+            worldX,
+            worldY
+          )) ?? "";
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (img as any).__markerId = dbId;
+        }
+
+        place();
+      },
+      [canEdit]
+    );
+
+    // ─── Render ───────────────────────────────────────────────────────────
 
     return (
       <div className="flex flex-col flex-1 overflow-hidden">
@@ -378,14 +565,8 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             const c = fabricRef.current;
             if (!c) return;
             const z = Math.min(c.getZoom() * 1.2, 20);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const fabric = (window as any).__fabric__;
-            void fabric;
             import("fabric").then(({ Point }) => {
-              c.zoomToPoint(
-                new Point(c.getWidth() / 2, c.getHeight() / 2),
-                z
-              );
+              c.zoomToPoint(new Point(c.getWidth() / 2, c.getHeight() / 2), z);
               setZoom(z);
             });
           }}
@@ -394,10 +575,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             if (!c) return;
             const z = Math.max(c.getZoom() / 1.2, 0.05);
             import("fabric").then(({ Point }) => {
-              c.zoomToPoint(
-                new Point(c.getWidth() / 2, c.getHeight() / 2),
-                z
-              );
+              c.zoomToPoint(new Point(c.getWidth() / 2, c.getHeight() / 2), z);
               setZoom(z);
             });
           }}
@@ -406,12 +584,21 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           onGridSizeChange={setGridSizeState}
         />
 
-        {/* Canvas Container */}
-        <div ref={containerRef} className="flex-1 relative overflow-hidden bg-bg-void">
+        {/* Canvas container — also the drop zone */}
+        <div
+          ref={containerRef}
+          className="flex-1 relative overflow-hidden bg-bg-void"
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
           <canvas ref={canvasElRef} className="absolute inset-0" />
 
+          {/* Icon palette overlay */}
+          {palette}
+
+          {/* Loading overlay */}
           {!imageLoaded && (
-            <div className="absolute inset-0 flex items-center justify-center bg-bg-void z-10">
+            <div className="absolute inset-0 flex items-center justify-center bg-bg-void z-10 pointer-events-none">
               <div className="text-center">
                 <div
                   className="w-8 h-8 border border-accent/30 animate-spin mx-auto mb-3"
@@ -424,9 +611,12 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             </div>
           )}
 
+          {/* Hint bar */}
           <div className="absolute bottom-3 right-3 pointer-events-none">
             <span className="font-mono text-[9px] text-text-muted tracking-widest bg-bg-surface/80 px-2 py-0.5">
-              SCROLL: ZOOM · SPACE+DRAG / MMB: PAN
+              {canEdit
+                ? "SCROLL: ZOOM · SPACE+DRAG: PAN · DEL: REMOVE MARKER"
+                : "SCROLL: ZOOM · SPACE+DRAG / MMB: PAN"}
             </span>
           </div>
         </div>
