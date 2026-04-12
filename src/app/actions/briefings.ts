@@ -9,6 +9,38 @@ export interface BriefingWithCreator extends Briefing {
   profiles: { callsign: string };
 }
 
+// ─── List all briefings across all user's teams ─────────────────────────────
+
+export interface BriefingWithTeam extends Briefing {
+  profiles: { callsign: string };
+  teams: { name: string };
+}
+
+export async function getAllMyBriefings(): Promise<BriefingWithTeam[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data: memberships } = await supabase
+    .from("team_members")
+    .select("team_id")
+    .eq("user_id", user.id);
+  if (!memberships || memberships.length === 0) return [];
+
+  const teamIds = memberships.map((m) => m.team_id);
+
+  const { data, error } = await supabase
+    .from("briefings")
+    .select("*, profiles:created_by(callsign), teams:team_id(name)")
+    .in("team_id", teamIds)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) return [];
+  return data as BriefingWithTeam[];
+}
+
 // ─── List briefings for a team ──────────────────────────────────────────────
 
 export async function getTeamBriefings(

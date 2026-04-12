@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
-import type { TacticalMap } from "@/types/database";
+import type { TacticalMap, Profile } from "@/types/database";
 
 // ─── Create a map DB record (file already uploaded to Storage by client) ────
 
@@ -113,6 +113,39 @@ export async function getMapWithSignedUrl(
     ...(map as TacticalMap),
     signedUrl: signed?.signedUrl ?? null,
   };
+}
+
+// ─── Get all maps across all user's teams ───────────────────────────────────
+
+export interface MapWithTeam extends TacticalMap {
+  teams: { name: string };
+  profiles: Pick<Profile, "callsign">;
+}
+
+export async function getAllMyMaps(): Promise<MapWithTeam[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  // Get user's team IDs
+  const { data: memberships } = await supabase
+    .from("team_members")
+    .select("team_id")
+    .eq("user_id", user.id);
+  if (!memberships || memberships.length === 0) return [];
+
+  const teamIds = memberships.map((m) => m.team_id);
+
+  const { data, error } = await supabase
+    .from("maps")
+    .select("*, teams:team_id(name), profiles:created_by(callsign)")
+    .in("team_id", teamIds)
+    .order("updated_at", { ascending: false });
+
+  if (error || !data) return [];
+  return data as MapWithTeam[];
 }
 
 // ─── Get a single team's info with the requesting user's role ────────────────
