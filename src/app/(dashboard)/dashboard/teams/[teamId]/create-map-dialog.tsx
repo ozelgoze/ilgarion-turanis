@@ -5,6 +5,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { createMapRecord } from "@/app/actions/maps";
+import ImageEditor from "@/components/image-editor";
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/tiff"];
 const MAX_FILE_MB = 50;
@@ -21,6 +22,8 @@ export default function CreateMapDialog({ teamId }: CreateMapDialogProps) {
   const [gridType, setGridType] = useState<GridType>("square");
   const [gridSize, setGridSize] = useState(50);
   const [file, setFile] = useState<File | null>(null);
+  const [rawFile, setRawFile] = useState<File | null>(null); // original before edit
+  const [showEditor, setShowEditor] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +35,8 @@ export default function CreateMapDialog({ teamId }: CreateMapDialogProps) {
     setGridType("square");
     setGridSize(50);
     setFile(null);
+    setRawFile(null);
+    setShowEditor(false);
     setUploading(false);
     setProgress(0);
     setError(null);
@@ -51,7 +56,8 @@ export default function CreateMapDialog({ teamId }: CreateMapDialogProps) {
     }
 
     setError(null);
-    setFile(selected);
+    setRawFile(selected);
+    setShowEditor(true);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -163,43 +169,71 @@ export default function CreateMapDialog({ teamId }: CreateMapDialogProps) {
                 />
               </div>
 
-              {/* File Upload */}
+              {/* File Upload + Image Editor */}
               <div className="space-y-1">
                 <label className="block font-mono text-[10px] tracking-[0.2em] text-text-dim uppercase">
                   Map Image{" "}
                   <span className="text-text-muted">(JPG, PNG, WEBP — max {MAX_FILE_MB}MB)</span>
                 </label>
-                <div
-                  className={[
-                    "border border-dashed p-6 text-center cursor-pointer transition-colors",
-                    file
-                      ? "border-accent/40 bg-accent/5"
-                      : "border-border hover:border-border-bright",
-                  ].join(" ")}
-                  onClick={() => !uploading && fileInputRef.current?.click()}
-                >
-                  {file ? (
-                    <div>
-                      <p className="font-mono text-xs text-accent tracking-widest truncate">
-                        {file.name}
-                      </p>
-                      <p className="font-mono text-[9px] text-text-muted mt-1">
-                        {(file.size / 1024 / 1024).toFixed(1)} MB
-                      </p>
-                    </div>
-                  ) : (
-                    <div>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted mx-auto mb-2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="17 8 12 3 7 8" />
-                        <line x1="12" y1="3" x2="12" y2="15" />
-                      </svg>
-                      <p className="font-mono text-[10px] text-text-muted tracking-widest uppercase">
-                        Click to select image
-                      </p>
-                    </div>
-                  )}
-                </div>
+
+                {showEditor && rawFile ? (
+                  <ImageEditor
+                    file={rawFile}
+                    onConfirm={(edited) => {
+                      setFile(edited);
+                      setShowEditor(false);
+                    }}
+                    onCancel={() => {
+                      // Use original without edits
+                      setFile(rawFile);
+                      setShowEditor(false);
+                    }}
+                  />
+                ) : (
+                  <div
+                    className={[
+                      "border border-dashed p-6 text-center cursor-pointer transition-colors",
+                      file
+                        ? "border-accent/40 bg-accent/5"
+                        : "border-border hover:border-border-bright",
+                    ].join(" ")}
+                    onClick={() => !uploading && fileInputRef.current?.click()}
+                  >
+                    {file ? (
+                      <div>
+                        <p className="font-mono text-xs text-accent tracking-widest truncate">
+                          {file.name}
+                        </p>
+                        <p className="font-mono text-[9px] text-text-muted mt-1">
+                          {(file.size / 1024 / 1024).toFixed(1)} MB ·{" "}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowEditor(true);
+                              setRawFile(file);
+                            }}
+                            className="text-amber hover:underline"
+                          >
+                            EDIT
+                          </button>
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-muted mx-auto mb-2">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="17 8 12 3 7 8" />
+                          <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                        <p className="font-mono text-[10px] text-text-muted tracking-widest uppercase">
+                          Click to select image
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <input
                   ref={fileInputRef}
                   type="file"

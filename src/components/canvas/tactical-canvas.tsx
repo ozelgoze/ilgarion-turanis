@@ -24,27 +24,31 @@ import type {
   DrawingType,
 } from "@/types/database";
 
+export interface MarkerContextMenuEvent {
+  markerId: string;
+  label: string;
+  assignedTo: string | null;
+  screenX: number;
+  screenY: number;
+}
+
 export interface TacticalCanvasRef {
   fitView: () => void;
   setGridType: (type: GridType) => void;
   setGridSize: (size: number) => void;
   // ─── Realtime marker manipulation ─────────────────
-  /** Returns true if a marker with this DB id already exists on the canvas. */
   hasMarker: (markerId: string) => boolean;
-  /** Adds a marker from an external source (realtime event). Adopts any
-   *  pending (no-id-yet) fabric object at matching coords to avoid duplicates. */
   addMarker: (marker: TacticalMarker) => void;
-  /** Updates the position of a marker already on the canvas. */
   updateMarkerPos: (markerId: string, x: number, y: number) => void;
-  /** Removes a marker from the canvas by DB id. */
   removeMarker: (markerId: string) => void;
+  /** Update label / assignment text displayed below marker */
+  updateMarkerMeta: (markerId: string, label: string | null, assignedCallsign: string | null) => void;
   // ─── Realtime drawing manipulation ────────────────
-  /** Returns true if a drawing with this DB id already exists on the canvas. */
   hasDrawing: (drawingId: string) => boolean;
-  /** Adds a drawing from an external source (realtime or initial load). */
   addDrawing: (drawing: MapDrawing) => void;
-  /** Removes a drawing from the canvas by DB id. */
   removeDrawing: (drawingId: string) => void;
+  // ─── Export ──────────────────────────────────────
+  exportPNG: () => string | null;
 }
 
 export type GridType = "none" | "square" | "hex";
@@ -77,6 +81,8 @@ interface TacticalCanvasProps {
   onMarkerMoved?: (markerId: string, x: number, y: number) => void;
   /** Called when Delete/Backspace is pressed with a marker selected */
   onMarkerDeleted?: (markerId: string) => void;
+  /** Called on right-click of a marker (for context menu) */
+  onMarkerContextMenu?: (event: MarkerContextMenuEvent) => void;
   // ─── Drawing props ─────────────────────────────────
   initialDrawings?: MapDrawing[];
   /** Called when a new drawing is finalised; resolves to the new DB id ("" on error) */
@@ -183,6 +189,24 @@ function getDrawingId(obj: any): string {
   return (obj?.__drawingId as string) ?? "";
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getMarkerLabelFor(obj: any): string {
+  return (obj?.__markerLabelFor as string) ?? "";
+}
+
+/** Find the label text object associated with a marker id */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function findLabelForMarker(canvas: any, markerId: string) {
+  if (!markerId) return null;
+  return canvas.getObjects().find(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (o: any) => getMarkerLabelFor(o) === markerId
+  ) ?? null;
+}
+
+const LABEL_FONT_SIZE = 11;
+const LABEL_OFFSET_Y = 24; // pixels below marker center
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line react/display-name
@@ -199,6 +223,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       onMarkerDrop,
       onMarkerMoved,
       onMarkerDeleted,
+      onMarkerContextMenu,
       initialDrawings = [],
       onDrawingCreate,
       onDrawingDeleted,
@@ -233,6 +258,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       onMarkerDrop,
       onMarkerMoved,
       onMarkerDeleted,
+      onMarkerContextMenu,
       onDrawingCreate,
       onDrawingDeleted,
     });
@@ -241,6 +267,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
         onMarkerDrop,
         onMarkerMoved,
         onMarkerDeleted,
+        onMarkerContextMenu,
         onDrawingCreate,
         onDrawingDeleted,
       };
@@ -248,6 +275,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       onMarkerDrop,
       onMarkerMoved,
       onMarkerDeleted,
+      onMarkerContextMenu,
       onDrawingCreate,
       onDrawingDeleted,
     ]);
@@ -349,6 +377,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           // Otherwise load & add a fresh marker image
           import("fabric").then(async (fabric) => {
             if (!fabricRef.current) return;
+            const c = fabricRef.current;
             const dataUrl = getNatoDataUrl(marker.marker_type, marker.affiliation);
             const img = await fabric.FabricImage.fromURL(dataUrl);
             if (!fabricRef.current) return;
@@ -363,8 +392,33 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             });
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (img as any).__markerId = marker.id;
-            fabricRef.current.add(img);
-            fabricRef.current.requestRenderAll();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerLabel = marker.label ?? "";
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerAssignedTo = marker.assigned_to ?? null;
+            c.add(img);
+
+            // Add label if present
+            if (marker.label) {
+              const txt = new fabric.FabricText(marker.label.toUpperCase(), {
+                left: marker.x,
+                top: marker.y + LABEL_OFFSET_Y,
+                fontSize: LABEL_FONT_SIZE,
+                fontFamily: "monospace",
+                fill: "#F0A500",
+                stroke: "#000000",
+                strokeWidth: 2,
+                paintFirst: "stroke",
+                originX: "center",
+                originY: "top",
+                selectable: false,
+                evented: false,
+              });
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (txt as any).__markerLabelFor = marker.id;
+              c.add(txt);
+            }
+            c.requestRenderAll();
           });
         },
 
@@ -379,6 +433,12 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           if (c.getActiveObject() === target) return;
           target.set({ left: x, top: y });
           target.setCoords();
+          // Move associated label
+          const lbl = findLabelForMarker(c, markerId);
+          if (lbl) {
+            lbl.set({ left: x, top: y + LABEL_OFFSET_Y });
+            lbl.setCoords();
+          }
           c.requestRenderAll();
         },
 
@@ -391,7 +451,62 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           if (!target) return;
           if (c.getActiveObject() === target) c.discardActiveObject();
           c.remove(target);
+          // Also remove associated label
+          const lbl = findLabelForMarker(c, markerId);
+          if (lbl) c.remove(lbl);
           c.requestRenderAll();
+        },
+
+        updateMarkerMeta: (markerId: string, label: string | null, assignedCallsign: string | null) => {
+          const c = fabricRef.current;
+          if (!c) return;
+          const markerObj = c
+            .getObjects()
+            .find((obj) => getMarkerId(obj) === markerId);
+          if (!markerObj) return;
+
+          // Build display text: "LABEL" or "LABEL · CALLSIGN" or "CALLSIGN"
+          const parts: string[] = [];
+          if (label) parts.push(label);
+          if (assignedCallsign) parts.push(assignedCallsign);
+          const displayText = parts.join(" · ").toUpperCase() || null;
+
+          const existing = findLabelForMarker(c, markerId);
+
+          if (!displayText) {
+            // Remove label if text is empty
+            if (existing) { c.remove(existing); c.requestRenderAll(); }
+            return;
+          }
+
+          if (existing) {
+            // Update existing label
+            existing.set({ text: displayText });
+            c.requestRenderAll();
+          } else {
+            // Create new label
+            import("fabric").then((fabric) => {
+              if (!fabricRef.current) return;
+              const txt = new fabric.FabricText(displayText, {
+                left: markerObj.left ?? 0,
+                top: (markerObj.top ?? 0) + LABEL_OFFSET_Y,
+                fontSize: LABEL_FONT_SIZE,
+                fontFamily: "monospace",
+                fill: "#F0A500",
+                stroke: "#000000",
+                strokeWidth: 2,
+                paintFirst: "stroke",
+                originX: "center",
+                originY: "top",
+                selectable: false,
+                evented: false,
+              });
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (txt as any).__markerLabelFor = markerId;
+              fabricRef.current!.add(txt);
+              fabricRef.current!.requestRenderAll();
+            });
+          }
         },
 
         // ─── Realtime drawing manipulation ────────────────────────
@@ -427,6 +542,21 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           c.remove(target);
           c.requestRenderAll();
         },
+
+        // ─── Export ─────────────────────────────────────────────
+        exportPNG: (): string | null => {
+          const c = fabricRef.current;
+          if (!c) return null;
+          // Temporarily deselect so selection handles don't appear in export
+          const active = c.getActiveObject();
+          if (active) c.discardActiveObject();
+          c.requestRenderAll();
+          const dataUrl = c.toDataURL({ format: "png", multiplier: 2 });
+          // Restore selection
+          if (active) c.setActiveObject(active);
+          c.requestRenderAll();
+          return dataUrl;
+        },
       }),
       [fitView, canEdit]
     );
@@ -452,6 +582,8 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           backgroundColor: CANVAS_BG,
           selection: canEdit,
           preserveObjectStacking: true,
+          skipOffscreen: true, // don't render off-screen objects — perf boost for large maps
+          enablePointerEvents: true, // enable pointer events for touch support
         });
         fabricRef.current = canvas;
 
@@ -857,6 +989,45 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           cbRef.current.onMarkerMoved?.(markerId, left, top);
         });
 
+        // ── Sync label position during marker drag ──────────────
+        canvas.on("object:moving", (opt) => {
+          if (!opt.target) return;
+          const markerId = getMarkerId(opt.target);
+          if (!markerId) return;
+          const lbl = findLabelForMarker(canvas, markerId);
+          if (lbl) {
+            lbl.set({
+              left: opt.target.left ?? 0,
+              top: (opt.target.top ?? 0) + LABEL_OFFSET_Y,
+            });
+            lbl.setCoords();
+          }
+        });
+
+        // ── Right-click context menu on markers ─────────────────
+        canvas.on("mouse:down", (opt) => {
+          const evt = opt.e as MouseEvent;
+          if (evt.button !== 2 || !canEdit) return;
+          if (!opt.target) return;
+          const markerId = getMarkerId(opt.target);
+          if (!markerId) return;
+          evt.preventDefault();
+          evt.stopPropagation();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const obj = opt.target as any;
+          cbRef.current.onMarkerContextMenu?.({
+            markerId,
+            label: obj.__markerLabel ?? "",
+            assignedTo: obj.__markerAssignedTo ?? null,
+            screenX: evt.clientX,
+            screenY: evt.clientY,
+          });
+        });
+
+        // Disable browser context menu on canvas
+        const canvasUpper = canvas.upperCanvasEl ?? canvasElRef.current!;
+        canvasUpper.addEventListener("contextmenu", (e: Event) => e.preventDefault());
+
         // ── Background image ────────────────────────────────────
         try {
           const img = await fabric.FabricImage.fromURL(imageUrl, {
@@ -895,10 +1066,100 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
         });
         ro.observe(container);
 
+        // ── Touch support: pinch-zoom + single-finger pan ────────
+        let touchState: {
+          type: "none" | "pan" | "pinch";
+          lastX: number;
+          lastY: number;
+          lastDist: number;
+          lastZoom: number;
+        } = { type: "none", lastX: 0, lastY: 0, lastDist: 0, lastZoom: 1 };
+
+        const onTouchStart = (e: TouchEvent) => {
+          if (e.touches.length === 2) {
+            e.preventDefault();
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            touchState = {
+              type: "pinch",
+              lastX: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+              lastY: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+              lastDist: Math.hypot(dx, dy),
+              lastZoom: canvas.getZoom(),
+            };
+          } else if (e.touches.length === 1) {
+            // Single finger pan (only in read-only or select mode)
+            touchState = {
+              type: "pan",
+              lastX: e.touches[0].clientX,
+              lastY: e.touches[0].clientY,
+              lastDist: 0,
+              lastZoom: canvas.getZoom(),
+            };
+          }
+        };
+
+        const onTouchMove = (e: TouchEvent) => {
+          if (touchState.type === "pinch" && e.touches.length === 2) {
+            e.preventDefault();
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const dist = Math.hypot(dx, dy);
+            const scale = dist / touchState.lastDist;
+            let newZoom = touchState.lastZoom * scale;
+            newZoom = Math.min(Math.max(newZoom, 0.05), 20);
+
+            const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            const pt = new fabric.Point(cx, cy);
+            canvas.zoomToPoint(pt, newZoom);
+
+            // Pan with pinch center movement
+            const panDx = cx - touchState.lastX;
+            const panDy = cy - touchState.lastY;
+            const vpt = canvas.viewportTransform;
+            vpt[4] += panDx;
+            vpt[5] += panDy;
+            canvas.setViewportTransform(vpt);
+
+            touchState.lastX = cx;
+            touchState.lastY = cy;
+            touchState.lastDist = dist;
+            touchState.lastZoom = newZoom;
+            setZoom(newZoom);
+            canvas.requestRenderAll();
+          } else if (touchState.type === "pan" && e.touches.length === 1) {
+            const dx = e.touches[0].clientX - touchState.lastX;
+            const dy = e.touches[0].clientY - touchState.lastY;
+            // Only pan if not dragging a marker (check if there's an active object)
+            if (!canvas.getActiveObject()) {
+              const vpt = canvas.viewportTransform;
+              vpt[4] += dx;
+              vpt[5] += dy;
+              canvas.setViewportTransform(vpt);
+              canvas.requestRenderAll();
+            }
+            touchState.lastX = e.touches[0].clientX;
+            touchState.lastY = e.touches[0].clientY;
+          }
+        };
+
+        const onTouchEnd = () => {
+          touchState.type = "none";
+        };
+
+        const upperCanvas = canvas.upperCanvasEl ?? canvasElRef.current!;
+        upperCanvas.addEventListener("touchstart", onTouchStart, { passive: false });
+        upperCanvas.addEventListener("touchmove", onTouchMove, { passive: false });
+        upperCanvas.addEventListener("touchend", onTouchEnd);
+
         cleanupRef.current = () => {
           ro.disconnect();
           window.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("keyup", onKeyUp);
+          upperCanvas.removeEventListener("touchstart", onTouchStart);
+          upperCanvas.removeEventListener("touchmove", onTouchMove);
+          upperCanvas.removeEventListener("touchend", onTouchEnd);
           canvas.dispose();
         };
       }
@@ -934,7 +1195,9 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
         if (!active || !fabricRef.current) return;
         const c = fabricRef.current;
 
-        const imgs = await Promise.all(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const allObjs: any[] = [];
+        await Promise.all(
           markers.map(async (m) => {
             const dataUrl = getNatoDataUrl(m.marker_type, m.affiliation);
             const img = await fabric.FabricImage.fromURL(dataUrl);
@@ -949,12 +1212,41 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             });
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (img as any).__markerId = m.id;
-            return img;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerLabel = m.label ?? "";
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerAssignedTo = m.assigned_to ?? null;
+            allObjs.push(img);
+
+            // Create label text if marker has label or assignment
+            const parts: string[] = [];
+            if (m.label) parts.push(m.label);
+            // assigned_to is a user id — we'll resolve callsigns in the parent
+            // For now store the id; parent will call updateMarkerMeta with callsign
+            if (parts.length > 0) {
+              const txt = new fabric.FabricText(parts.join(" · ").toUpperCase(), {
+                left: m.x,
+                top: m.y + LABEL_OFFSET_Y,
+                fontSize: LABEL_FONT_SIZE,
+                fontFamily: "monospace",
+                fill: "#F0A500",
+                stroke: "#000000",
+                strokeWidth: 2,
+                paintFirst: "stroke",
+                originX: "center",
+                originY: "top",
+                selectable: false,
+                evented: false,
+              });
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (txt as any).__markerLabelFor = m.id;
+              allObjs.push(txt);
+            }
           })
         );
 
         if (!active || !fabricRef.current) return;
-        for (const img of imgs) c.add(img);
+        for (const obj of allObjs) c.add(obj);
         c.requestRenderAll();
       }
 

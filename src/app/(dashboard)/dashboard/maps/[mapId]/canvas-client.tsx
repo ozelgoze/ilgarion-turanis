@@ -1,24 +1,29 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 import TacticalCanvas from "@/components/canvas/tactical-canvas";
 import IconPalette from "@/components/canvas/icon-palette";
 import SitrepPanel from "@/components/canvas/sitrep-panel";
+import MarkerContextMenu from "@/components/canvas/marker-context-menu";
 import type {
   GridType,
   TacticalCanvasRef,
   CreateDrawingPayload,
+  MarkerContextMenuEvent,
 } from "@/components/canvas/tactical-canvas";
+import type { MarkerContextMenuData } from "@/components/canvas/marker-context-menu";
 import type {
   TacticalMarker,
   MarkerType,
   MarkerAffiliation,
   MapDrawing,
   Briefing,
+  TeamMemberWithProfile,
 } from "@/types/database";
 import {
   createMarker,
   updateMarkerPosition,
+  updateMarker,
   deleteMarker,
 } from "@/app/actions/markers";
 import {
@@ -39,6 +44,7 @@ interface CanvasClientProps {
   canEdit: boolean;
   currentUserId: string;
   currentCallsign: string;
+  teamMembers: TeamMemberWithProfile[];
 }
 
 export default function CanvasClient({
@@ -53,10 +59,12 @@ export default function CanvasClient({
   canEdit,
   currentUserId,
   currentCallsign,
+  teamMembers,
 }: CanvasClientProps) {
   const canvasRef = useRef<TacticalCanvasRef | null>(null);
   const [presence, setPresence] = useState<PresenceUser[]>([]);
   const [sitrepOpen, setSitrepOpen] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<MarkerContextMenuData | null>(null);
 
   // ── Subscribe to realtime marker + drawing changes + presence ──────────
   const { broadcast } = useMapRealtime({
@@ -66,6 +74,11 @@ export default function CanvasClient({
     currentCallsign,
     onPresenceChange: setPresence,
   });
+
+  // ── Build a lookup map: userId → callsign ─────────────────────────────
+  const callsignMap = useRef(
+    new Map(teamMembers.map((m) => [m.user_id, m.profiles.callsign]))
+  ).current;
 
   // ── Marker callbacks wired to server actions ─────────────────────────────
 
@@ -112,6 +125,37 @@ export default function CanvasClient({
     });
   }
 
+  // ── Marker context menu (right-click) ───────────────────────────────────
+
+  const handleMarkerContextMenu = useCallback((event: MarkerContextMenuEvent) => {
+    setCtxMenu({
+      markerId: event.markerId,
+      label: event.label,
+      assignedTo: event.assignedTo,
+      screenX: event.screenX,
+      screenY: event.screenY,
+    });
+  }, []);
+
+  async function handleMarkerSave(markerId: string, label: string, assignedTo: string | null) {
+    const result = await updateMarker({
+      markerId,
+      label: label || null,
+      assignedTo,
+    });
+    if (result.marker) {
+      const assignedCallsign = assignedTo ? callsignMap.get(assignedTo) ?? null : null;
+      canvasRef.current?.updateMarkerMeta(markerId, label || null, assignedCallsign);
+      broadcast({
+        type: "marker_update_meta",
+        id: markerId,
+        label: label || null,
+        assignedCallsign,
+        sender: currentUserId,
+      });
+    }
+  }
+
   // ── Drawing callbacks wired to server actions ────────────────────────────
 
   async function handleDrawingCreate(
@@ -143,6 +187,16 @@ export default function CanvasClient({
     });
   }
 
+  // ── Export to PNG ──────────────────────────────────────────────────────
+  function handleExportPNG() {
+    const dataUrl = canvasRef.current?.exportPNG();
+    if (!dataUrl) return;
+    const link = document.createElement("a");
+    link.download = `tactical-map-${mapId.slice(0, 8)}.png`;
+    link.href = dataUrl;
+    link.click();
+  }
+
   // ── Other viewers (exclude self) ─────────────────────────────────────────
   const others = presence.filter((u) => u.user_id !== currentUserId);
 
@@ -163,6 +217,7 @@ export default function CanvasClient({
         onMarkerDrop={handleMarkerDrop}
         onMarkerMoved={handleMarkerMoved}
         onMarkerDeleted={handleMarkerDeleted}
+        onMarkerContextMenu={handleMarkerContextMenu}
         onDrawingCreate={handleDrawingCreate}
         onDrawingDeleted={handleDrawingDeleted}
         scaleFactor={scaleFactor}
@@ -226,6 +281,27 @@ export default function CanvasClient({
         </svg>
         SITREP
       </button>
+
+      {/* ── Export PNG Button ────────────────────────────────────── */}
+      <button
+        onClick={handleExportPNG}
+        className="absolute left-2 top-[4.5rem] z-20 flex items-center gap-1.5 px-2 py-1.5 font-mono text-[9px] tracking-widest uppercase border border-border text-text-muted hover:text-text-dim bg-bg-surface/90 transition-colors backdrop-blur-sm"
+        title="Export map as PNG"
+      >
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+        EXPORT
+      </button>
       </div>
 
       {/* ── SITREP Side Panel ────────────────────────────────────── */}
@@ -234,6 +310,18 @@ export default function CanvasClient({
         canEdit={canEdit}
         visible={sitrepOpen}
         onClose={() => setSitrepOpen(false)}
+      />
+
+      {/* ── Marker Context Menu ──────────────────────────────────── */}
+      <MarkerContextMenu
+        data={ctxMenu}
+        teamMembers={teamMembers}
+        onClose={() => setCtxMenu(null)}
+        onSave={handleMarkerSave}
+        onDelete={(id) => {
+          handleMarkerDeleted(id);
+          canvasRef.current?.removeMarker(id);
+        }}
       />
     </div>
   );
