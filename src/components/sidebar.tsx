@@ -61,7 +61,7 @@ export default function Sidebar() {
   return (
     <aside className="w-16 shrink-0 bg-bg-surface border-r border-border flex flex-col items-center py-4 gap-1">
       {/* Logo */}
-      <Link href="/dashboard" className="mb-4 mt-1" aria-label="MTC Home">
+      <Link href="/dashboard" className="mb-4 mt-1" aria-label="UEE ATAK Home">
         <AppLogo size="sm" />
       </Link>
 

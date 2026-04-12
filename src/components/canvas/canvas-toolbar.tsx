@@ -380,7 +380,7 @@ export default function CanvasToolbar({
         />
 
         <span className="font-mono text-[10px] text-text-muted tracking-widest uppercase hidden md:block">
-          MTC v7
+          UEE ATAK v7
         </span>
       </div>
     </div>

@@ -1,4 +1,4 @@
-# MYTHRA TACTICAL COMMAND (MTC) — AI Development Guide
+# UEE ATAK APP — AI Development Guide
 
 ## Project Overview
 A real-time collaborative tactical planning web app (Star Citizen milsim aesthetic). Users create teams, upload map images, place NATO APP-6C markers, draw tactical overlays, and run briefings — all synced in real-time via Supabase broadcast channels.
@@ -71,7 +71,7 @@ Migrations in `supabase/migrations/` (ordered by timestamp). Types mirrored in `
 - `client.ts` — Browser client (client components, realtime)
 - `proxy.ts` — Middleware for auth session refresh + route protection
 
-## Design System (MTC Theme)
+## Design System (UEE ATAK Theme)
 
 **Dark mode only.** Defined in `src/app/globals.css` via CSS custom properties.
 

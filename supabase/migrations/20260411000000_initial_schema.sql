@@ -1,5 +1,5 @@
 -- ============================================================
--- Mythra Tactical Command — Initial Schema
+-- UEE ATAK APP — Initial Schema
 -- Migration: 20260411000000_initial_schema.sql
 -- Idempotent: safe to re-run on an existing database
 --

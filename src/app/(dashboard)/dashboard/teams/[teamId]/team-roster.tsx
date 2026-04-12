@@ -97,13 +97,19 @@ export default function TeamRoster({
               <th className="text-left px-4 py-2 font-mono text-[9px] tracking-widest text-text-muted uppercase">
                 Callsign
               </th>
+              <th className="text-left px-4 py-2 font-mono text-[9px] tracking-widest text-text-muted uppercase hidden sm:table-cell">
+                SC Handle
+              </th>
               <th className="text-left px-4 py-2 font-mono text-[9px] tracking-widest text-text-muted uppercase">
                 Role
               </th>
               <th className="text-left px-4 py-2 font-mono text-[9px] tracking-widest text-text-muted uppercase">
                 Ship Assignment
               </th>
-              <th className="text-left px-4 py-2 font-mono text-[9px] tracking-widest text-text-muted uppercase">
+              <th className="text-left px-4 py-2 font-mono text-[9px] tracking-widest text-text-muted uppercase hidden md:table-cell">
+                Org
+              </th>
+              <th className="text-left px-4 py-2 font-mono text-[9px] tracking-widest text-text-muted uppercase hidden lg:table-cell">
                 Joined
               </th>
               {isCommander && (
@@ -139,6 +145,22 @@ export default function TeamRoster({
                         </span>
                       )}
                     </div>
+                  </td>
+                  <td className="px-4 py-2.5 hidden sm:table-cell">
+                    {m.profiles?.sc_handle ? (
+                      <a
+                        href={`https://robertsspaceindustries.com/citizens/${encodeURIComponent(m.profiles.sc_handle)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono text-[10px] tracking-widest text-accent/70 hover:text-accent transition-colors uppercase"
+                        title={`View ${m.profiles.sc_handle} on RSI`}
+                      >
+                        {m.profiles.sc_handle}
+                        <span className="ml-1 text-[8px] text-text-muted">↗</span>
+                      </a>
+                    ) : (
+                      <span className="font-mono text-[10px] text-text-muted/30 tracking-widest">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5">
                     {isCommander && !isSelf ? (
@@ -229,7 +251,19 @@ export default function TeamRoster({
                       </button>
                     )}
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-4 py-2.5 hidden md:table-cell">
+                    {m.profiles?.sc_org ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 border border-accent/20 bg-accent/5">
+                        <span className="w-1 h-1 bg-accent/50" />
+                        <span className="font-mono text-[9px] tracking-widest text-accent/70 uppercase">
+                          {m.profiles.sc_org}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="font-mono text-[10px] text-text-muted/30 tracking-widest">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 hidden lg:table-cell">
                     <span className="font-mono text-[10px] text-text-muted tracking-widest">
                       {joinedDate}
                     </span>

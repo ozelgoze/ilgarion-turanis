@@ -6,8 +6,9 @@ import PageTransition, {
   staggerContainer,
   staggerItem,
 } from "@/components/page-transition";
-import { ROLE_COLORS, ROLE_LABELS, type TeamWithRole } from "@/types/database";
+import { ROLE_COLORS, ROLE_LABELS, THREAT_LEVELS, type TeamWithRole, type ThreatLevel } from "@/types/database";
 import StantonReference from "@/components/stanton-reference";
+import QuantumPlanner from "@/components/quantum-planner";
 
 interface DashboardStats {
   unitCount: number;
@@ -16,6 +17,8 @@ interface DashboardStats {
   operativeCount: number;
   commanderCount: number;
   recentMapActivity: string | null;
+  fleetCount: number;
+  maxThreat: ThreatLevel;
 }
 
 interface DashboardClientProps {
@@ -55,12 +58,14 @@ export default function DashboardClient({
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15, duration: 0.4 }}
-        className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8"
+        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8"
       >
         <StatCard label="UNITS" value={stats.unitCount} accent="accent" />
         <StatCard label="MAPS" value={stats.mapCount} accent="accent" />
         <StatCard label="BRIEFINGS" value={stats.briefingCount} accent="amber" />
         <StatCard label="OPERATIVES" value={stats.operativeCount} accent="accent" />
+        <StatCard label="FLEET" value={stats.fleetCount} accent="amber" />
+        <ThreatStatCard maxThreat={stats.maxThreat} />
       </motion.div>
 
       {/* Teams Grid */}
@@ -91,6 +96,16 @@ export default function DashboardClient({
         <StantonReference />
       </motion.div>
 
+      {/* Quantum Travel Planner */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4, duration: 0.4 }}
+        className="mt-4"
+      >
+        <QuantumPlanner />
+      </motion.div>
+
       {/* Recent Activity */}
       {stats.recentMapActivity && (
         <motion.div
@@ -114,7 +129,7 @@ export default function DashboardClient({
           <StatusDot label="AUTH" active />
         </div>
         <span className="font-mono text-[9px] text-text-muted tracking-widest">
-          MTC-OPS-CENTER
+          UEE-ATAK-OPS-CENTER
         </span>
       </div>
     </PageTransition>
@@ -154,6 +169,34 @@ function StatCard({
       <p className={`font-mono text-2xl font-bold ${c.text} tracking-wider`}>
         {value}
       </p>
+    </div>
+  );
+}
+
+function ThreatStatCard({ maxThreat }: { maxThreat: ThreatLevel }) {
+  const threat = THREAT_LEVELS[maxThreat];
+  const isHigh = maxThreat >= 2;
+
+  return (
+    <div
+      className="bg-bg-surface border p-4 transition-all duration-200 hover:bg-bg-elevated"
+      style={{ borderColor: `${threat.color}33`, boxShadow: `0 0 12px ${threat.color}14` }}
+    >
+      <p className="font-mono text-[9px] tracking-widest text-text-muted uppercase mb-1">
+        THREAT
+      </p>
+      <div className="flex items-center gap-2">
+        <span
+          className={`w-2.5 h-2.5 ${isHigh ? "animate-pulse" : ""}`}
+          style={{ backgroundColor: threat.color }}
+        />
+        <span
+          className="font-mono text-lg font-bold tracking-wider"
+          style={{ color: threat.color }}
+        >
+          {threat.label}
+        </span>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 // ============================================================
-// Mythra Tactical Command — TypeScript Interfaces
+// UEE ATAK APP — TypeScript Interfaces
 // Mirrors the Supabase PostgreSQL schema exactly
 // ============================================================
 

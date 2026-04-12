@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { getMyTeams } from "@/app/actions/teams";
+import { getMyTeams, getTeamMembers } from "@/app/actions/teams";
 import { getAllMyMaps } from "@/app/actions/maps";
 import { getAllMyBriefings } from "@/app/actions/briefings";
-import { ROLE_COLORS, ROLE_LABELS, type TeamWithRole } from "@/types/database";
+import { ROLE_COLORS, ROLE_LABELS, type TeamWithRole, type ThreatLevel } from "@/types/database";
 import DashboardClient from "./dashboard-client";
 
 export default async function DashboardPage() {
@@ -24,6 +24,26 @@ export default async function DashboardPage() {
       })
     : null;
 
+  // Fleet count: gather unique ships from all team rosters
+  const allMembers = await Promise.all(
+    teams.map((t) => getTeamMembers(t.id))
+  );
+  const shipSet = new Set<string>();
+  for (const roster of allMembers) {
+    for (const m of roster) {
+      const ship = m.assigned_ship || m.profiles?.primary_ship;
+      if (ship) shipSet.add(ship.trim().toUpperCase());
+    }
+  }
+  const fleetCount = shipSet.size;
+
+  // Max threat level across all maps
+  const maxThreatNum = maps.reduce(
+    (max, m) => Math.max(max, m.threat_level ?? 0),
+    0
+  );
+  const maxThreat = Math.min(maxThreatNum, 3) as ThreatLevel;
+
   return (
     <DashboardClient
       teams={teams}
@@ -34,6 +54,8 @@ export default async function DashboardPage() {
         operativeCount: totalOperatives,
         commanderCount,
         recentMapActivity,
+        fleetCount,
+        maxThreat,
       }}
     />
   );

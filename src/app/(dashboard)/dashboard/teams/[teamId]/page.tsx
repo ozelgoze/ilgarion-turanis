@@ -4,12 +4,13 @@ import { getTeamInfo, getTeamMaps } from "@/app/actions/maps";
 import { getTeamBriefings } from "@/app/actions/briefings";
 import { getTeamMembers } from "@/app/actions/teams";
 import { createClient } from "@/utils/supabase/server";
-import { ROLE_COLORS, ROLE_LABELS, canEdit, isCommander } from "@/types/database";
-import type { TacticalMap } from "@/types/database";
+import { ROLE_COLORS, ROLE_LABELS, THREAT_LEVELS, canEdit, isCommander } from "@/types/database";
+import type { TacticalMap, ThreatLevel } from "@/types/database";
 import type { BriefingWithCreator } from "@/app/actions/briefings";
 import CreateMapDialog from "./create-map-dialog";
 import CreateBriefingDialog from "./create-briefing-dialog";
 import TeamRoster from "./team-roster";
+import FleetOverview from "./fleet-overview";
 
 interface PageProps {
   params: Promise<{ teamId: string }>;
@@ -88,6 +89,9 @@ export default async function TeamDetailPage({ params }: PageProps) {
           </div>
         </div>
       </div>
+
+      {/* Fleet Overview */}
+      <FleetOverview members={members} />
 
       {/* Maps Section */}
       <div className="flex items-center justify-between mb-4">
@@ -266,6 +270,9 @@ function MapCard({ map }: { map: TacticalMap }) {
     year: "numeric",
   });
 
+  const threat = THREAT_LEVELS[(map.threat_level ?? 0) as ThreatLevel];
+  const isHighThreat = (map.threat_level ?? 0) >= 2;
+
   return (
     <Link
       href={`/dashboard/maps/${map.id}`}
@@ -273,13 +280,29 @@ function MapCard({ map }: { map: TacticalMap }) {
     >
       <div className="mtc-panel bg-bg-surface p-5 transition-all duration-150 hover:bg-bg-elevated hover:border-accent/40 cursor-pointer">
         {/* Header */}
-        <div className="flex items-center gap-2 mb-3">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent/60 shrink-0">
-            <polygon points="3,6 9,3 15,6 21,3 21,18 15,21 9,18 3,21" />
-          </svg>
-          <span className="font-mono text-[9px] tracking-widest text-text-dim uppercase">
-            Tactical Map
-          </span>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent/60 shrink-0">
+              <polygon points="3,6 9,3 15,6 21,3 21,18 15,21 9,18 3,21" />
+            </svg>
+            <span className="font-mono text-[9px] tracking-widest text-text-dim uppercase">
+              Tactical Map
+            </span>
+          </div>
+
+          {/* Threat Level Badge */}
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`w-2 h-2 shrink-0 ${isHighThreat ? "animate-pulse" : ""}`}
+              style={{ backgroundColor: threat.color }}
+            />
+            <span
+              className="font-mono text-[8px] tracking-widest uppercase font-bold"
+              style={{ color: threat.color }}
+            >
+              {threat.label}
+            </span>
+          </div>
         </div>
 
         {/* Name */}
