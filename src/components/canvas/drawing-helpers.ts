@@ -18,7 +18,8 @@ export type DrawTool =
   | "line"
   | "arrow"
   | "rectangle"
-  | "circle";
+  | "circle"
+  | "measure";
 
 export const DRAW_COLORS: { value: string; label: string }[] = [
   { value: "#00ffcc", label: "Cyan" },

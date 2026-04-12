@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
-import type { TeamWithRole } from "@/types/database";
+import type { TeamWithRole, TeamRole, TeamMemberWithProfile } from "@/types/database";
 
 export interface TeamActionResult {
   error?: string;
@@ -109,4 +109,155 @@ export async function getMyTeams(): Promise<TeamWithRole[]> {
       member_count: team.team_members?.[0]?.count ?? 0,
     };
   });
+}
+
+// ─── Get team members with profiles ─────────────────────────────────────────
+
+export async function getTeamMembers(
+  teamId: string
+): Promise<TeamMemberWithProfile[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from("team_members")
+    .select("*, profiles:user_id(id, callsign, avatar_url, created_at, updated_at)")
+    .eq("team_id", teamId)
+    .order("joined_at", { ascending: true });
+
+  if (error || !data) return [];
+  return data as TeamMemberWithProfile[];
+}
+
+// ─── Add a member by callsign ───────────────────────────────────────────────
+
+export async function addTeamMember(
+  teamId: string,
+  callsign: string,
+  role: TeamRole = "operator"
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "AUTHENTICATION REQUIRED." };
+
+  // Only commanders can add members
+  const { data: myMembership } = await supabase
+    .from("team_members")
+    .select("role")
+    .eq("team_id", teamId)
+    .eq("user_id", user.id)
+    .eq("role", "commander")
+    .single();
+  if (!myMembership) return { error: "COMMANDER CLEARANCE REQUIRED." };
+
+  // Look up the target user by callsign
+  const { data: targetProfile } = await supabase
+    .from("profiles")
+    .select("id")
+    .ilike("callsign", callsign.trim())
+    .single();
+  if (!targetProfile) return { error: "OPERATIVE NOT FOUND — CHECK CALLSIGN." };
+
+  // Check if already a member
+  const { data: existing } = await supabase
+    .from("team_members")
+    .select("id")
+    .eq("team_id", teamId)
+    .eq("user_id", targetProfile.id)
+    .single();
+  if (existing) return { error: "OPERATIVE ALREADY IN UNIT." };
+
+  const { error } = await supabase.from("team_members").insert({
+    team_id: teamId,
+    user_id: targetProfile.id,
+    role,
+  });
+
+  if (error) return { error: "FAILED TO ADD OPERATIVE." };
+  return {};
+}
+
+// ─── Update a member's role ─────────────────────────────────────────────────
+
+export async function updateMemberRole(
+  memberId: string,
+  newRole: TeamRole
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "AUTHENTICATION REQUIRED." };
+
+  // Get the membership to verify team + commander role
+  const { data: target } = await supabase
+    .from("team_members")
+    .select("team_id, user_id")
+    .eq("id", memberId)
+    .single();
+  if (!target) return { error: "MEMBERSHIP NOT FOUND." };
+
+  // Prevent self-demotion
+  if (target.user_id === user.id) return { error: "CANNOT MODIFY OWN ROLE." };
+
+  const { data: myMembership } = await supabase
+    .from("team_members")
+    .select("role")
+    .eq("team_id", target.team_id)
+    .eq("user_id", user.id)
+    .eq("role", "commander")
+    .single();
+  if (!myMembership) return { error: "COMMANDER CLEARANCE REQUIRED." };
+
+  const { error } = await supabase
+    .from("team_members")
+    .update({ role: newRole })
+    .eq("id", memberId);
+
+  if (error) return { error: "FAILED TO UPDATE ROLE." };
+  return {};
+}
+
+// ─── Remove a member ────────────────────────────────────────────────────────
+
+export async function removeTeamMember(
+  memberId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "AUTHENTICATION REQUIRED." };
+
+  const { data: target } = await supabase
+    .from("team_members")
+    .select("team_id, user_id")
+    .eq("id", memberId)
+    .single();
+  if (!target) return { error: "MEMBERSHIP NOT FOUND." };
+
+  // Prevent self-removal
+  if (target.user_id === user.id) return { error: "CANNOT REMOVE SELF." };
+
+  const { data: myMembership } = await supabase
+    .from("team_members")
+    .select("role")
+    .eq("team_id", target.team_id)
+    .eq("user_id", user.id)
+    .eq("role", "commander")
+    .single();
+  if (!myMembership) return { error: "COMMANDER CLEARANCE REQUIRED." };
+
+  const { error } = await supabase
+    .from("team_members")
+    .delete()
+    .eq("id", memberId);
+
+  if (error) return { error: "FAILED TO REMOVE OPERATIVE." };
+  return {};
 }

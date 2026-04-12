@@ -83,6 +83,9 @@ interface TacticalCanvasProps {
   onDrawingCreate?: (payload: CreateDrawingPayload) => Promise<string>;
   /** Called when Delete is pressed with a drawing selected */
   onDrawingDeleted?: (drawingId: string) => void;
+  // ─── Scale ─────────────────────────────────────────
+  /** Pixels-per-unit ratio for the measurement tool (default 1.0 = 1px per unit) */
+  scaleFactor?: number;
 }
 
 const GRID_COLOR = "rgba(0, 255, 204, 0.12)";
@@ -199,6 +202,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       initialDrawings = [],
       onDrawingCreate,
       onDrawingDeleted,
+      scaleFactor = 1.0,
     },
     ref
   ) {
@@ -217,6 +221,12 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
     const initialMarkersRef = useRef(initialMarkers);
     const drawingsLoadedRef = useRef(false);
     const initialDrawingsRef = useRef(initialDrawings);
+    const scaleFactorRef = useRef(scaleFactor);
+    useEffect(() => { scaleFactorRef.current = scaleFactor; }, [scaleFactor]);
+
+    // Ephemeral measurement objects (not persisted, cleared on next measure or tool switch)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const measureObjectsRef = useRef<any[]>([]);
 
     // Keep callbacks in a ref so event handlers always see the latest version
     const cbRef = useRef({
@@ -579,6 +589,8 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           let preview: any = null;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let extraObjs: any[] = [];
           switch (tool) {
             case "line":
               preview = new fabric.Line([sx, sy, x, y], common);
@@ -609,13 +621,52 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
               });
               break;
             }
+            case "measure": {
+              const measureCommon = {
+                ...common,
+                stroke: "#F0A500",
+                strokeDashArray: [6, 4],
+              };
+              preview = new fabric.Line([sx, sy, x, y], measureCommon);
+              // Distance label
+              const dist = Math.hypot(x - sx, y - sy) * scaleFactorRef.current;
+              const mx = (sx + x) / 2;
+              const my = (sy + y) / 2;
+              const label = new fabric.Text(
+                `${dist.toFixed(1)}u`,
+                {
+                  left: mx,
+                  top: my - 14,
+                  fontSize: 12,
+                  fontFamily: "monospace",
+                  fill: "#F0A500",
+                  selectable: false,
+                  evented: false,
+                  originX: "center",
+                  originY: "center",
+                }
+              );
+              extraObjs = [label];
+              break;
+            }
             default:
               break;
           }
 
+          // For measure tool, also remove previous extra objects
+          if (ds.previewObj?.__measureExtras) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            for (const o of ds.previewObj.__measureExtras) canvas.remove(o);
+          }
+
           if (preview) {
+            if (extraObjs.length > 0) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (preview as any).__measureExtras = extraObjs;
+            }
             ds.previewObj = preview;
             canvas.add(preview);
+            for (const o of extraObjs) canvas.add(o);
             canvas.requestRenderAll();
           }
         });
@@ -636,8 +687,14 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           const { x: ex, y: ey } = toWorld(evt);
           const { startX: sx, startY: sy, tool, color, width, previewObj } = ds;
 
-          // Clear preview + reset state
-          if (previewObj) canvas.remove(previewObj);
+          // Clear preview + any measure extras
+          if (previewObj) {
+            canvas.remove(previewObj);
+            if (previewObj.__measureExtras) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              for (const o of previewObj.__measureExtras) canvas.remove(o);
+            }
+          }
           drawingStateRef.current = {
             active: false,
             startX: 0,
@@ -652,6 +709,57 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           // Ignore micro-clicks (no real drag)
           const dragDist = Math.hypot(ex - sx, ey - sy);
           if (dragDist < 4) {
+            canvas.requestRenderAll();
+            return;
+          }
+
+          // ── Measure tool: ephemeral (not persisted) ─────────────
+          if (tool === "measure") {
+            // Clear previous measurement
+            for (const mo of measureObjectsRef.current) canvas.remove(mo);
+            measureObjectsRef.current = [];
+
+            const measureLine = new fabric.Line([sx, sy, ex, ey], {
+              stroke: "#F0A500",
+              strokeWidth: 2,
+              strokeDashArray: [6, 4],
+              fill: "transparent",
+              selectable: false,
+              evented: false,
+              strokeLineCap: "round" as const,
+            });
+            const dist = dragDist * scaleFactorRef.current;
+            const mx = (sx + ex) / 2;
+            const my = (sy + ey) / 2;
+            const label = new fabric.Text(
+              `${dist.toFixed(1)} units`,
+              {
+                left: mx,
+                top: my - 16,
+                fontSize: 13,
+                fontFamily: "monospace",
+                fill: "#F0A500",
+                selectable: false,
+                evented: false,
+                originX: "center",
+                originY: "center",
+              }
+            );
+            // Endpoint dots
+            const dot1 = new fabric.Circle({
+              left: sx, top: sy, radius: 3,
+              fill: "#F0A500", selectable: false, evented: false,
+              originX: "center", originY: "center",
+            });
+            const dot2 = new fabric.Circle({
+              left: ex, top: ey, radius: 3,
+              fill: "#F0A500", selectable: false, evented: false,
+              originX: "center", originY: "center",
+            });
+
+            const objs = [measureLine, label, dot1, dot2];
+            for (const o of objs) canvas.add(o);
+            measureObjectsRef.current = objs;
             canvas.requestRenderAll();
             return;
           }
@@ -1099,7 +1207,9 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           <div className="absolute bottom-3 right-3 pointer-events-none">
             <span className="font-mono text-[9px] text-text-muted tracking-widest bg-bg-surface/80 px-2 py-0.5">
               {canEdit
-                ? drawTool !== "select"
+                ? drawTool === "measure"
+                  ? "MEASURE: CLICK+DRAG TO MEASURE DISTANCE"
+                  : drawTool !== "select"
                   ? `DRAW: ${drawTool.toUpperCase()} · CLICK+DRAG · ESC TOOL = SELECT`
                   : "SCROLL: ZOOM · SPACE+DRAG: PAN · DEL: REMOVE"
                 : "SCROLL: ZOOM · SPACE+DRAG / MMB: PAN"}

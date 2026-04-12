@@ -3,6 +3,8 @@ import Link from "next/link";
 import { getMapWithSignedUrl } from "@/app/actions/maps";
 import { getTeamInfo } from "@/app/actions/maps";
 import { getMapMarkers } from "@/app/actions/markers";
+import { getMapDrawings } from "@/app/actions/drawings";
+import { getTeamBriefings } from "@/app/actions/briefings";
 import { canEdit as checkCanEdit } from "@/types/database";
 import { createClient } from "@/utils/supabase/server";
 import CanvasClient from "./canvas-client";
@@ -47,10 +49,12 @@ export default async function MapCanvasPage({ params }: PageProps) {
     );
   }
 
-  // Fetch team role + markers in parallel
-  const [teamInfo, markers] = await Promise.all([
+  // Fetch team role + markers + drawings + briefings in parallel
+  const [teamInfo, markers, drawings, briefings] = await Promise.all([
     getTeamInfo(map.team_id),
     getMapMarkers(mapId),
+    getMapDrawings(mapId),
+    getTeamBriefings(map.team_id),
   ]);
 
   const userCanEdit = teamInfo ? checkCanEdit(teamInfo.my_role) : false;
@@ -125,6 +129,9 @@ export default async function MapCanvasPage({ params }: PageProps) {
         initialGridType={map.grid_type as GridType}
         initialGridSize={map.grid_size}
         initialMarkers={markers}
+        initialDrawings={drawings}
+        latestBriefing={briefings.length > 0 ? briefings[0] : null}
+        scaleFactor={map.scale_factor}
         canEdit={userCanEdit}
         currentUserId={user.id}
         currentCallsign={currentCallsign}
