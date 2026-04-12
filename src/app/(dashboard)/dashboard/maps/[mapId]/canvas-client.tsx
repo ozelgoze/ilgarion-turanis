@@ -125,7 +125,7 @@ export default function CanvasClient({
     });
   }
 
-  // ── Marker context menu (right-click) ───────────────────────────────────
+  // ── Marker context menu (double-click) ──────────────────────────────────
 
   const handleMarkerContextMenu = useCallback((event: MarkerContextMenuEvent) => {
     setCtxMenu({
@@ -221,24 +221,27 @@ export default function CanvasClient({
         onDrawingCreate={handleDrawingCreate}
         onDrawingDeleted={handleDrawingDeleted}
         scaleFactor={scaleFactor}
+        onExportPNG={handleExportPNG}
+        onToggleSitrep={() => setSitrepOpen((v) => !v)}
+        sitrepOpen={sitrepOpen}
       />
 
-      {/* ── Presence Overlay ─────────────────────────────────────── */}
-      <div className="absolute right-2 top-12 z-20 pointer-events-none">
-        <div className="bg-bg-surface/90 border border-border px-2 py-1.5 flex flex-col gap-1 min-w-[120px] backdrop-blur-sm">
+      {/* ── Presence Overlay (bottom-right, out of the way) ──────── */}
+      <div className="absolute right-3 bottom-10 z-20 pointer-events-none">
+        <div className="bg-bg-surface/90 border border-border px-3 py-2 flex flex-col gap-1.5 min-w-[140px] backdrop-blur-sm">
           <div className="flex items-center justify-between gap-2 border-b border-border pb-1">
-            <span className="font-mono text-[8px] tracking-widest text-text-muted uppercase">
+            <span className="font-mono text-[10px] tracking-widest text-text-muted uppercase">
               Viewers
             </span>
-            <span className="font-mono text-[8px] tracking-widest text-accent">
+            <span className="font-mono text-[10px] tracking-widest text-accent">
               {presence.length || 1}
             </span>
           </div>
 
           {/* Self */}
           <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
-            <span className="font-mono text-[9px] tracking-widest text-accent uppercase truncate">
+            <span className="w-2 h-2 rounded-full bg-accent shrink-0" />
+            <span className="font-mono text-[11px] tracking-widest text-accent uppercase truncate">
               {currentCallsign} <span className="text-text-muted">· YOU</span>
             </span>
           </div>
@@ -246,62 +249,14 @@ export default function CanvasClient({
           {/* Others */}
           {others.map((u) => (
             <div key={u.user_id} className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber animate-pulse shrink-0" />
-              <span className="font-mono text-[9px] tracking-widest text-text-dim uppercase truncate">
+              <span className="w-2 h-2 rounded-full bg-amber animate-pulse shrink-0" />
+              <span className="font-mono text-[11px] tracking-widest text-text-dim uppercase truncate">
                 {u.callsign}
               </span>
             </div>
           ))}
         </div>
       </div>
-
-      {/* ── SITREP Toggle Button ─────────────────────────────────── */}
-      <button
-        onClick={() => setSitrepOpen((v) => !v)}
-        className={[
-          "absolute left-2 top-12 z-20 flex items-center gap-1.5 px-2 py-1.5 font-mono text-[9px] tracking-widest uppercase border transition-colors backdrop-blur-sm",
-          sitrepOpen
-            ? "border-amber/40 text-amber bg-amber/10"
-            : "border-border text-text-muted hover:text-text-dim bg-bg-surface/90",
-        ].join(" ")}
-        title="Toggle SITREP panel"
-      >
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <rect x="4" y="2" width="16" height="20" rx="1" />
-          <line x1="8" y1="7" x2="16" y2="7" />
-          <line x1="8" y1="11" x2="16" y2="11" />
-          <line x1="8" y1="15" x2="12" y2="15" />
-        </svg>
-        SITREP
-      </button>
-
-      {/* ── Export PNG Button ────────────────────────────────────── */}
-      <button
-        onClick={handleExportPNG}
-        className="absolute left-2 top-[4.5rem] z-20 flex items-center gap-1.5 px-2 py-1.5 font-mono text-[9px] tracking-widest uppercase border border-border text-text-muted hover:text-text-dim bg-bg-surface/90 transition-colors backdrop-blur-sm"
-        title="Export map as PNG"
-      >
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7 10 12 15 17 10" />
-          <line x1="12" y1="15" x2="12" y2="3" />
-        </svg>
-        EXPORT
-      </button>
       </div>
 
       {/* ── SITREP Side Panel ────────────────────────────────────── */}

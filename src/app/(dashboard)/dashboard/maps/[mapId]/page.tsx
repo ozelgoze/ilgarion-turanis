@@ -67,10 +67,10 @@ export default async function MapCanvasPage({ params }: PageProps) {
       <div className="h-10 shrink-0 bg-bg-surface border-b border-border flex items-center px-4 gap-4 z-10">
         <Link
           href={`/dashboard/teams/${map.team_id}`}
-          className="flex items-center gap-1.5 font-mono text-[10px] tracking-widest text-text-muted hover:text-text-dim transition-colors uppercase"
+          className="flex items-center gap-1.5 font-mono text-[11px] tracking-widest text-text-muted hover:text-text-dim transition-colors uppercase"
         >
           <svg
-            width="10" height="10" viewBox="0 0 24 24"
+            width="12" height="12" viewBox="0 0 24 24"
             fill="none" stroke="currentColor" strokeWidth="2.5"
           >
             <line x1="19" y1="12" x2="5" y2="12" />
@@ -79,11 +79,11 @@ export default async function MapCanvasPage({ params }: PageProps) {
           Back
         </Link>
         <div className="w-px h-4 bg-border" />
-        <span className="font-mono text-[11px] tracking-widest text-text-primary uppercase">
+        <span className="font-mono text-xs tracking-widest text-text-primary uppercase">
           {map.name}
         </span>
         <div className="w-px h-4 bg-border" />
-        <span className="font-mono text-[9px] text-text-muted tracking-widest uppercase">
+        <span className="font-mono text-[11px] text-text-muted tracking-widest uppercase">
           {map.grid_type !== "none"
             ? `${map.grid_type} Grid · ${map.grid_size}px`
             : "No Grid"}
@@ -93,7 +93,7 @@ export default async function MapCanvasPage({ params }: PageProps) {
         {markers.length > 0 && (
           <>
             <div className="w-px h-4 bg-border" />
-            <span className="font-mono text-[9px] text-text-muted tracking-widest uppercase">
+            <span className="font-mono text-[11px] text-text-muted tracking-widest uppercase">
               {markers.length} Marker{markers.length !== 1 ? "s" : ""}
             </span>
           </>
@@ -103,7 +103,7 @@ export default async function MapCanvasPage({ params }: PageProps) {
         {teamInfo && (
           <div className="ml-auto flex items-center gap-2">
             <span
-              className="font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border"
+              className="font-mono text-[10px] tracking-widest uppercase px-2 py-0.5 border"
               style={{
                 color: userCanEdit ? "#00ffcc" : "#45A29E",
                 borderColor: userCanEdit
@@ -116,8 +116,8 @@ export default async function MapCanvasPage({ params }: PageProps) {
             >
               {teamInfo.my_role.toUpperCase()}
             </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-            <span className="font-mono text-[9px] text-text-muted tracking-widest uppercase">
+            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+            <span className="font-mono text-[11px] text-text-muted tracking-widest uppercase">
               Live
             </span>
           </div>

@@ -36,7 +36,6 @@ export default function MarkerContextMenu({
     if (data) {
       setLabel(data.label);
       setAssignedTo(data.assignedTo);
-      // Focus label input after render
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [data]);
@@ -77,7 +76,6 @@ export default function MarkerContextMenu({
     onClose();
   }
 
-  // Position the menu near the click, keeping it on screen
   const style: React.CSSProperties = {
     position: "fixed",
     left: data.screenX,
@@ -86,24 +84,24 @@ export default function MarkerContextMenu({
   };
 
   return (
-    <div ref={menuRef} style={style} className="w-64">
+    <div ref={menuRef} style={style} className="w-72">
       <div className="bg-bg-deep border border-border shadow-xl">
         {/* Header */}
-        <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-          <span className="font-mono text-[9px] tracking-widest text-text-muted uppercase">
+        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+          <span className="font-mono text-[11px] tracking-widest text-text-muted uppercase">
             Marker Config
           </span>
           <button
             onClick={onClose}
-            className="font-mono text-[9px] text-text-muted hover:text-text-bright transition-colors"
+            className="font-mono text-sm text-text-muted hover:text-text-bright transition-colors"
           >
             &times;
           </button>
         </div>
 
         {/* Label */}
-        <div className="px-3 py-2 border-b border-border/50">
-          <label className="block font-mono text-[8px] tracking-widest text-text-muted uppercase mb-1">
+        <div className="px-4 py-3 border-b border-border/50">
+          <label className="block font-mono text-[10px] tracking-widest text-text-muted uppercase mb-1.5">
             Designation
           </label>
           <input
@@ -113,23 +111,23 @@ export default function MarkerContextMenu({
             onChange={(e) => setLabel(e.target.value)}
             placeholder="e.g. Alpha Squad"
             maxLength={40}
-            className="w-full bg-bg-surface border border-border px-2 py-1.5 font-mono text-xs text-text-bright placeholder:text-text-muted/40 focus:border-amber/50 focus:outline-none transition-colors"
+            className="w-full bg-bg-surface border border-border px-2.5 py-2 font-mono text-sm text-text-bright placeholder:text-text-muted/40 focus:border-amber/50 focus:outline-none transition-colors"
             onKeyDown={(e) => {
               if (e.key === "Enter") handleSave();
-              e.stopPropagation(); // prevent canvas shortcuts
+              e.stopPropagation();
             }}
           />
         </div>
 
         {/* Assign to */}
-        <div className="px-3 py-2 border-b border-border/50">
-          <label className="block font-mono text-[8px] tracking-widest text-text-muted uppercase mb-1">
+        <div className="px-4 py-3 border-b border-border/50">
+          <label className="block font-mono text-[10px] tracking-widest text-text-muted uppercase mb-1.5">
             Assigned To
           </label>
           <select
             value={assignedTo ?? ""}
             onChange={(e) => setAssignedTo(e.target.value || null)}
-            className="w-full bg-bg-surface border border-border px-2 py-1.5 font-mono text-xs text-text-bright focus:border-amber/50 focus:outline-none transition-colors"
+            className="w-full bg-bg-surface border border-border px-2.5 py-2 font-mono text-sm text-text-bright focus:border-amber/50 focus:outline-none transition-colors"
           >
             <option value="">— Unassigned —</option>
             {teamMembers.map((m) => (
@@ -141,16 +139,16 @@ export default function MarkerContextMenu({
         </div>
 
         {/* Actions */}
-        <div className="px-3 py-2 flex items-center gap-2">
+        <div className="px-4 py-3 flex items-center gap-2">
           <button
             onClick={handleSave}
-            className="flex-1 bg-amber/20 border border-amber/40 px-2 py-1.5 font-mono text-[9px] tracking-widest text-amber uppercase hover:bg-amber/30 transition-colors"
+            className="flex-1 bg-amber/20 border border-amber/40 px-3 py-2 font-mono text-[11px] tracking-widest text-amber uppercase hover:bg-amber/30 transition-colors"
           >
             Save
           </button>
           <button
             onClick={handleDelete}
-            className="px-2 py-1.5 border border-red-500/30 font-mono text-[9px] tracking-widest text-red-400 uppercase hover:bg-red-500/10 transition-colors"
+            className="px-3 py-2 border border-red-500/30 font-mono text-[11px] tracking-widest text-red-400 uppercase hover:bg-red-500/10 transition-colors"
           >
             Delete
           </button>

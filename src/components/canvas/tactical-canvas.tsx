@@ -92,6 +92,10 @@ interface TacticalCanvasProps {
   // ─── Scale ─────────────────────────────────────────
   /** Pixels-per-unit ratio for the measurement tool (default 1.0 = 1px per unit) */
   scaleFactor?: number;
+  // ─── Toolbar action callbacks ─────────────────────
+  onExportPNG?: () => void;
+  onToggleSitrep?: () => void;
+  sitrepOpen?: boolean;
 }
 
 const GRID_COLOR = "rgba(0, 255, 204, 0.12)";
@@ -228,6 +232,9 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       onDrawingCreate,
       onDrawingDeleted,
       scaleFactor = 1.0,
+      onExportPNG,
+      onToggleSitrep,
+      sitrepOpen = false,
     },
     ref
   ) {
@@ -388,7 +395,9 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
               originY: "center",
               selectable: canEdit,
               evented: canEdit,
-              hasControls: false,
+              hasControls: canEdit,
+              hasBorders: canEdit,
+              lockRotation: true,
             });
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (img as any).__markerId = marker.id;
@@ -582,8 +591,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           backgroundColor: CANVAS_BG,
           selection: canEdit,
           preserveObjectStacking: true,
-          skipOffscreen: true, // don't render off-screen objects — perf boost for large maps
-          enablePointerEvents: true, // enable pointer events for touch support
+          allowTouchScrolling: true,
         });
         fabricRef.current = canvas;
 
@@ -1004,15 +1012,14 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           }
         });
 
-        // ── Right-click context menu on markers ─────────────────
-        canvas.on("mouse:down", (opt) => {
-          const evt = opt.e as MouseEvent;
-          if (evt.button !== 2 || !canEdit) return;
+        // ── Double-click context menu on markers ─────────────────
+        canvas.on("mouse:dblclick", (opt) => {
+          if (!canEdit) return;
           if (!opt.target) return;
           const markerId = getMarkerId(opt.target);
           if (!markerId) return;
+          const evt = opt.e as MouseEvent;
           evt.preventDefault();
-          evt.stopPropagation();
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const obj = opt.target as any;
           cbRef.current.onMarkerContextMenu?.({
@@ -1023,10 +1030,6 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             screenY: evt.clientY,
           });
         });
-
-        // Disable browser context menu on canvas
-        const canvasUpper = canvas.upperCanvasEl ?? canvasElRef.current!;
-        canvasUpper.addEventListener("contextmenu", (e: Event) => e.preventDefault());
 
         // ── Background image ────────────────────────────────────
         try {
@@ -1208,7 +1211,9 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
               originY: "center",
               selectable: canEdit,
               evented: canEdit,
-              hasControls: false,
+              hasControls: canEdit,
+              hasBorders: canEdit,
+              lockRotation: true,
             });
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (img as any).__markerId = m.id;
@@ -1387,7 +1392,9 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             originY: "center",
             selectable: true,
             evented: true,
-            hasControls: false,
+            hasControls: canEdit,
+              hasBorders: canEdit,
+              lockRotation: true,
           });
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (img as any).__markerId = ""; // pending DB confirmation
@@ -1447,6 +1454,9 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           onDrawToolChange={setDrawTool}
           onDrawColorChange={setDrawColor}
           onDrawStrokeWidthChange={setDrawStrokeWidth}
+          onExportPNG={onExportPNG}
+          onToggleSitrep={onToggleSitrep}
+          sitrepOpen={sitrepOpen}
         />
 
         {/* Canvas container — also the drop zone */}
@@ -1469,7 +1479,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
                   className="w-8 h-8 border border-accent/30 animate-spin mx-auto mb-3"
                   style={{ borderTopColor: "#00ffcc" }}
                 />
-                <p className="font-mono text-[10px] tracking-widest text-text-muted uppercase">
+                <p className="font-mono text-[11px] tracking-widest text-text-muted uppercase">
                   Loading Map Image...
                 </p>
               </div>
@@ -1477,15 +1487,15 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           )}
 
           {/* Hint bar */}
-          <div className="absolute bottom-3 right-3 pointer-events-none">
-            <span className="font-mono text-[9px] text-text-muted tracking-widest bg-bg-surface/80 px-2 py-0.5">
+          <div className="absolute bottom-3 left-3 pointer-events-none">
+            <span className="font-mono text-[11px] text-text-muted tracking-widest bg-bg-surface/80 px-3 py-1">
               {canEdit
                 ? drawTool === "measure"
-                  ? "MEASURE: CLICK+DRAG TO MEASURE DISTANCE"
+                  ? "MEASURE: CLICK+DRAG"
                   : drawTool !== "select"
-                  ? `DRAW: ${drawTool.toUpperCase()} · CLICK+DRAG · ESC TOOL = SELECT`
-                  : "SCROLL: ZOOM · SPACE+DRAG: PAN · DEL: REMOVE"
-                : "SCROLL: ZOOM · SPACE+DRAG / MMB: PAN"}
+                  ? `DRAW: ${drawTool.toUpperCase()} · CLICK+DRAG · ESC = SELECT`
+                  : "SCROLL: ZOOM · SPACE+DRAG: PAN · DEL: REMOVE · DBLCLICK: EDIT MARKER"
+                : "SCROLL: ZOOM · SPACE+DRAG: PAN"}
             </span>
           </div>
         </div>
