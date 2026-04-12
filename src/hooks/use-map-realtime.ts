@@ -18,7 +18,7 @@ export interface PresenceUser {
 export type MapBroadcastEvent =
   | { type: "marker_insert"; marker: TacticalMarker; sender: string }
   | { type: "marker_update"; id: string; x: number; y: number; sender: string }
-  | { type: "marker_update_meta"; id: string; label: string | null; assignedCallsign: string | null; sender: string }
+  | { type: "marker_update_meta"; id: string; label: string | null; assignedCallsign: string | null; labelSize?: number; sender: string }
   | { type: "marker_delete"; id: string; sender: string }
   | { type: "drawing_insert"; drawing: MapDrawing; sender: string }
   | { type: "drawing_delete"; id: string; sender: string };
@@ -101,7 +101,7 @@ export function useMapRealtime({
           }
           break;
         case "marker_update_meta":
-          ref.updateMarkerMeta(data.id, data.label, data.assignedCallsign);
+          ref.updateMarkerMeta(data.id, data.label, data.assignedCallsign, data.labelSize);
           break;
         case "marker_delete":
           ref.removeMarker(data.id);

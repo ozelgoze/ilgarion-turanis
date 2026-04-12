@@ -3,10 +3,18 @@
 import { useState, useRef, useEffect } from "react";
 import type { TeamMemberWithProfile } from "@/types/database";
 
+export const LABEL_SIZES = [
+  { value: 10, label: "S" },
+  { value: 14, label: "M" },
+  { value: 20, label: "L" },
+];
+
 export interface MarkerContextMenuData {
   markerId: string;
   label: string;
   assignedTo: string | null;
+  labelSize: number;
+  updatedAt?: string;
   screenX: number;
   screenY: number;
 }
@@ -15,7 +23,7 @@ interface MarkerContextMenuProps {
   data: MarkerContextMenuData | null;
   teamMembers: TeamMemberWithProfile[];
   onClose: () => void;
-  onSave: (markerId: string, label: string, assignedTo: string | null) => void;
+  onSave: (markerId: string, label: string, assignedTo: string | null, labelSize: number) => void;
   onDelete: (markerId: string) => void;
 }
 
@@ -28,19 +36,19 @@ export default function MarkerContextMenu({
 }: MarkerContextMenuProps) {
   const [label, setLabel] = useState("");
   const [assignedTo, setAssignedTo] = useState<string | null>(null);
+  const [labelSize, setLabelSize] = useState(14);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Sync state when data changes
   useEffect(() => {
     if (data) {
       setLabel(data.label);
       setAssignedTo(data.assignedTo);
+      setLabelSize(data.labelSize || 14);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [data]);
 
-  // Close on click outside
   useEffect(() => {
     if (!data) return;
     function handleClick(e: MouseEvent) {
@@ -52,7 +60,6 @@ export default function MarkerContextMenu({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [data, onClose]);
 
-  // Close on Escape
   useEffect(() => {
     if (!data) return;
     function handleKey(e: KeyboardEvent) {
@@ -66,7 +73,7 @@ export default function MarkerContextMenu({
 
   function handleSave() {
     if (!data) return;
-    onSave(data.markerId, label.trim(), assignedTo);
+    onSave(data.markerId, label.trim(), assignedTo, labelSize);
     onClose();
   }
 
@@ -85,7 +92,7 @@ export default function MarkerContextMenu({
 
   return (
     <div ref={menuRef} style={style} className="w-72">
-      <div className="bg-bg-deep border border-border shadow-xl">
+      <div className="bg-bg-primary border border-border shadow-2xl">
         {/* Header */}
         <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
           <span className="font-mono text-[11px] tracking-widest text-text-muted uppercase">
@@ -117,6 +124,30 @@ export default function MarkerContextMenu({
               e.stopPropagation();
             }}
           />
+        </div>
+
+        {/* Label Size */}
+        <div className="px-4 py-3 border-b border-border/50">
+          <label className="block font-mono text-[10px] tracking-widest text-text-muted uppercase mb-1.5">
+            Label Size
+          </label>
+          <div className="flex gap-1.5">
+            {LABEL_SIZES.map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => setLabelSize(s.value)}
+                className={[
+                  "flex-1 py-1.5 font-mono text-[11px] tracking-widest uppercase border transition-colors",
+                  labelSize === s.value
+                    ? "border-amber/50 text-amber bg-amber/10"
+                    : "border-border text-text-muted hover:border-border-bright",
+                ].join(" ")}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Assign to */}

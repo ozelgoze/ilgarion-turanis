@@ -116,12 +116,15 @@ export interface UpdateMarkerInput {
   markerId: string;
   label?: string | null;
   assignedTo?: string | null;
+  labelSize?: number;
+  /** Pass the last-known updated_at for optimistic concurrency control */
+  expectedUpdatedAt?: string;
 }
 
 export async function updateMarker(
   input: UpdateMarkerInput
 ): Promise<{ marker?: TacticalMarker; error?: string }> {
-  const { markerId, label, assignedTo } = input;
+  const { markerId, label, assignedTo, labelSize, expectedUpdatedAt } = input;
 
   const supabase = await createClient();
   const {
@@ -133,16 +136,27 @@ export async function updateMarker(
   const payload: Record<string, any> = {};
   if (label !== undefined) payload.label = label;
   if (assignedTo !== undefined) payload.assigned_to = assignedTo;
+  if (labelSize !== undefined) payload.label_size = labelSize;
 
   if (Object.keys(payload).length === 0) return { error: "NOTHING TO UPDATE." };
 
-  const { data, error } = await supabase
+  // Optimistic concurrency: if caller provided expectedUpdatedAt, only
+  // update if the row hasn't been modified since then.
+  let query = supabase
     .from("tactical_markers")
     .update(payload)
-    .eq("id", markerId)
-    .select("*")
-    .single();
+    .eq("id", markerId);
 
+  if (expectedUpdatedAt) {
+    query = query.eq("updated_at", expectedUpdatedAt);
+  }
+
+  const { data, error } = await query.select("*").single();
+
+  if (error?.code === "PGRST116" && expectedUpdatedAt) {
+    // No rows matched — another user edited this marker concurrently
+    return { error: "CONFLICT: Marker was modified by another user. Re-open the marker to see latest changes." };
+  }
   if (error || !data) return { error: "FAILED TO UPDATE MARKER." };
   return { marker: data as TacticalMarker };
 }

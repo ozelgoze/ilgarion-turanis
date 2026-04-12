@@ -132,25 +132,39 @@ export default function CanvasClient({
       markerId: event.markerId,
       label: event.label,
       assignedTo: event.assignedTo,
+      labelSize: event.labelSize,
+      updatedAt: event.updatedAt,
       screenX: event.screenX,
       screenY: event.screenY,
     });
   }, []);
 
-  async function handleMarkerSave(markerId: string, label: string, assignedTo: string | null) {
+  const [conflictMsg, setConflictMsg] = useState<string | null>(null);
+
+  async function handleMarkerSave(markerId: string, label: string, assignedTo: string | null, labelSize: number) {
+    // Look up the updatedAt from the context menu data for optimistic locking
+    const expectedUpdatedAt = ctxMenu?.updatedAt;
     const result = await updateMarker({
       markerId,
       label: label || null,
       assignedTo,
+      labelSize,
+      expectedUpdatedAt,
     });
+    if (result.error && result.error.startsWith("CONFLICT")) {
+      setConflictMsg(result.error);
+      setTimeout(() => setConflictMsg(null), 4000);
+      return;
+    }
     if (result.marker) {
       const assignedCallsign = assignedTo ? callsignMap.get(assignedTo) ?? null : null;
-      canvasRef.current?.updateMarkerMeta(markerId, label || null, assignedCallsign);
+      canvasRef.current?.updateMarkerMeta(markerId, label || null, assignedCallsign, labelSize);
       broadcast({
         type: "marker_update_meta",
         id: markerId,
         label: label || null,
         assignedCallsign,
+        labelSize,
         sender: currentUserId,
       });
     }
@@ -226,31 +240,27 @@ export default function CanvasClient({
         sitrepOpen={sitrepOpen}
       />
 
-      {/* ── Presence Overlay (bottom-right, out of the way) ──────── */}
-      <div className="absolute right-3 bottom-10 z-20 pointer-events-none">
-        <div className="bg-bg-surface/90 border border-border px-3 py-2 flex flex-col gap-1.5 min-w-[140px] backdrop-blur-sm">
-          <div className="flex items-center justify-between gap-2 border-b border-border pb-1">
-            <span className="font-mono text-[10px] tracking-widest text-text-muted uppercase">
-              Viewers
-            </span>
-            <span className="font-mono text-[10px] tracking-widest text-accent">
-              {presence.length || 1}
-            </span>
-          </div>
+      {/* ── Presence Overlay (center bottom) ──────── */}
+      <div className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 pointer-events-none">
+        <div className="bg-bg-surface/90 border border-border px-3 py-2 flex items-center gap-3 backdrop-blur-sm">
+          <span className="font-mono text-[10px] tracking-widest text-text-muted uppercase whitespace-nowrap">
+            Viewers ({presence.length || 1})
+          </span>
+          <div className="w-px h-3 bg-border" />
 
           {/* Self */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
             <span className="w-2 h-2 rounded-full bg-accent shrink-0" />
-            <span className="font-mono text-[11px] tracking-widest text-accent uppercase truncate">
+            <span className="font-mono text-[11px] tracking-widest text-accent uppercase">
               {currentCallsign} <span className="text-text-muted">· YOU</span>
             </span>
           </div>
 
           {/* Others */}
           {others.map((u) => (
-            <div key={u.user_id} className="flex items-center gap-1.5">
+            <div key={u.user_id} className="flex items-center gap-1.5 whitespace-nowrap">
               <span className="w-2 h-2 rounded-full bg-amber animate-pulse shrink-0" />
-              <span className="font-mono text-[11px] tracking-widest text-text-dim uppercase truncate">
+              <span className="font-mono text-[11px] tracking-widest text-text-dim uppercase">
                 {u.callsign}
               </span>
             </div>
@@ -278,6 +288,15 @@ export default function CanvasClient({
           canvasRef.current?.removeMarker(id);
         }}
       />
+
+      {/* ── Conflict Toast ──────────────────────────────────────── */}
+      {conflictMsg && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[10000] bg-red-900/90 border border-red-500/50 px-4 py-2.5 backdrop-blur-sm">
+          <p className="font-mono text-[11px] tracking-widest text-red-300 uppercase">
+            {conflictMsg}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

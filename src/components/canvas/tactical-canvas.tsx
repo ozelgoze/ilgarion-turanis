@@ -28,6 +28,8 @@ export interface MarkerContextMenuEvent {
   markerId: string;
   label: string;
   assignedTo: string | null;
+  labelSize: number;
+  updatedAt?: string;
   screenX: number;
   screenY: number;
 }
@@ -42,7 +44,7 @@ export interface TacticalCanvasRef {
   updateMarkerPos: (markerId: string, x: number, y: number) => void;
   removeMarker: (markerId: string) => void;
   /** Update label / assignment text displayed below marker */
-  updateMarkerMeta: (markerId: string, label: string | null, assignedCallsign: string | null) => void;
+  updateMarkerMeta: (markerId: string, label: string | null, assignedCallsign: string | null, labelSize?: number) => void;
   // ─── Realtime drawing manipulation ────────────────
   hasDrawing: (drawingId: string) => boolean;
   addDrawing: (drawing: MapDrawing) => void;
@@ -405,6 +407,10 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             (img as any).__markerLabel = marker.label ?? "";
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (img as any).__markerAssignedTo = marker.assigned_to ?? null;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerLabelSize = marker.label_size ?? 14;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerUpdatedAt = marker.updated_at ?? undefined;
             c.add(img);
 
             // Add label if present
@@ -412,7 +418,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
               const txt = new fabric.FabricText(marker.label.toUpperCase(), {
                 left: marker.x,
                 top: marker.y + LABEL_OFFSET_Y,
-                fontSize: LABEL_FONT_SIZE,
+                fontSize: marker.label_size ?? LABEL_FONT_SIZE,
                 fontFamily: "monospace",
                 fill: "#F0A500",
                 stroke: "#000000",
@@ -466,7 +472,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           c.requestRenderAll();
         },
 
-        updateMarkerMeta: (markerId: string, label: string | null, assignedCallsign: string | null) => {
+        updateMarkerMeta: (markerId: string, label: string | null, assignedCallsign: string | null, labelSize?: number) => {
           const c = fabricRef.current;
           if (!c) return;
           const markerObj = c
@@ -474,11 +480,23 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             .find((obj) => getMarkerId(obj) === markerId);
           if (!markerObj) return;
 
+          // Store labelSize on the marker object for future reads
+          if (labelSize !== undefined) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (markerObj as any).__markerLabelSize = labelSize;
+          }
+          const fontSize = labelSize ?? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (markerObj as any).__markerLabelSize ?? LABEL_FONT_SIZE;
+
           // Build display text: "LABEL" or "LABEL · CALLSIGN" or "CALLSIGN"
           const parts: string[] = [];
           if (label) parts.push(label);
           if (assignedCallsign) parts.push(assignedCallsign);
           const displayText = parts.join(" · ").toUpperCase() || null;
+
+          // Store label text on marker for dblclick reads
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (markerObj as any).__markerLabel = label ?? "";
 
           const existing = findLabelForMarker(c, markerId);
 
@@ -489,8 +507,8 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           }
 
           if (existing) {
-            // Update existing label
-            existing.set({ text: displayText });
+            // Update existing label text and size
+            existing.set({ text: displayText, fontSize });
             c.requestRenderAll();
           } else {
             // Create new label
@@ -499,7 +517,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
               const txt = new fabric.FabricText(displayText, {
                 left: markerObj.left ?? 0,
                 top: (markerObj.top ?? 0) + LABEL_OFFSET_Y,
-                fontSize: LABEL_FONT_SIZE,
+                fontSize,
                 fontFamily: "monospace",
                 fill: "#F0A500",
                 stroke: "#000000",
@@ -611,6 +629,9 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             const markerId = getMarkerId(active);
             if (markerId) {
               canvas.remove(active);
+              // Also remove associated label text
+              const lbl = findLabelForMarker(canvas, markerId);
+              if (lbl) canvas.remove(lbl);
               canvas.discardActiveObject();
               canvas.requestRenderAll();
               cbRef.current.onMarkerDeleted?.(markerId);
@@ -1026,6 +1047,8 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             markerId,
             label: obj.__markerLabel ?? "",
             assignedTo: obj.__markerAssignedTo ?? null,
+            labelSize: obj.__markerLabelSize ?? 14,
+            updatedAt: obj.__markerUpdatedAt ?? undefined,
             screenX: evt.clientX,
             screenY: evt.clientY,
           });
@@ -1221,6 +1244,10 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             (img as any).__markerLabel = m.label ?? "";
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (img as any).__markerAssignedTo = m.assigned_to ?? null;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerLabelSize = m.label_size ?? 14;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerUpdatedAt = m.updated_at ?? undefined;
             allObjs.push(img);
 
             // Create label text if marker has label or assignment
@@ -1232,7 +1259,7 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
               const txt = new fabric.FabricText(parts.join(" · ").toUpperCase(), {
                 left: m.x,
                 top: m.y + LABEL_OFFSET_Y,
-                fontSize: LABEL_FONT_SIZE,
+                fontSize: m.label_size ?? LABEL_FONT_SIZE,
                 fontFamily: "monospace",
                 fill: "#F0A500",
                 stroke: "#000000",

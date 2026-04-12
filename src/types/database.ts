@@ -79,6 +79,7 @@ export interface TacticalMarker {
   metadata: Record<string, unknown>;
   placed_by: string;
   assigned_to: string | null;
+  label_size: number;
   created_at: string;
   updated_at: string;
 }
