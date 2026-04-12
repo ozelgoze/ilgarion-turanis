@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/client";
 import type { TacticalMarker, MapDrawing } from "@/types/database";
@@ -14,6 +14,14 @@ export interface PresenceUser {
   online_at: string;
 }
 
+/** Broadcast event types sent between clients on the same map channel */
+export type MapBroadcastEvent =
+  | { type: "marker_insert"; marker: TacticalMarker; sender: string }
+  | { type: "marker_update"; id: string; x: number; y: number; sender: string }
+  | { type: "marker_delete"; id: string; sender: string }
+  | { type: "drawing_insert"; drawing: MapDrawing; sender: string }
+  | { type: "drawing_delete"; id: string; sender: string };
+
 interface UseMapRealtimeParams {
   mapId: string;
   canvasRef: React.RefObject<TacticalCanvasRef | null>;
@@ -23,18 +31,21 @@ interface UseMapRealtimeParams {
   onPresenceChange?: (users: PresenceUser[]) => void;
 }
 
+interface UseMapRealtimeReturn {
+  /** Broadcast a map change to all other viewers on this channel */
+  broadcast: (event: MapBroadcastEvent) => void;
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 /**
- * Subscribes to realtime changes on `tactical_markers` and `map_drawings`
- * for a given map, applying INSERT/UPDATE/DELETE events to the Fabric canvas
- * via the ref.
+ * Subscribes to realtime changes via **broadcast** messages on the map channel.
+ * Each client broadcasts its own changes after a successful DB write;
+ * other clients receive the broadcast and apply it to the canvas.
  *
- * Dedup is handled at the canvas level:
- *   - `hasMarker(id)` / `hasDrawing(id)`  → skip known inserts
- *   - `addMarker(...)` → adopts any "pending" marker at matching coords
- *     so the local optimistic drop and the incoming server event don't
- *     produce duplicates.
+ * This avoids the RLS-filtered `postgres_changes` path, which can silently
+ * drop events for non-commander roles whose security-definer policy chain
+ * doesn't resolve in Supabase Realtime's WAL evaluation context.
  *
  * Also tracks presence of other viewers on the map.
  */
@@ -45,12 +56,14 @@ export function useMapRealtime({
   currentCallsign,
   enabled = true,
   onPresenceChange,
-}: UseMapRealtimeParams): void {
+}: UseMapRealtimeParams): UseMapRealtimeReturn {
   // Keep the presence callback in a ref so effect doesn't re-run on change
   const presenceCbRef = useRef(onPresenceChange);
   useEffect(() => {
     presenceCbRef.current = onPresenceChange;
   }, [onPresenceChange]);
+
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
     if (!enabled || !mapId) return;
@@ -59,10 +72,48 @@ export function useMapRealtime({
     const channel: RealtimeChannel = supabase.channel(`map:${mapId}`, {
       config: {
         presence: { key: currentUserId },
+        broadcast: { self: false }, // don't echo back our own broadcasts
       },
     });
+    channelRef.current = channel;
 
-    // ── Marker INSERT ────────────────────────────────────────────────────
+    // ── Broadcast listener — receives changes from other clients ─────────
+    channel.on("broadcast", { event: "map_change" }, (payload) => {
+      const data = payload.payload as MapBroadcastEvent;
+      if (!data) return;
+
+      // Skip events from self (safety net — self:false should handle this)
+      if (data.sender === currentUserId) return;
+
+      const ref = canvasRef.current;
+      if (!ref) return;
+
+      switch (data.type) {
+        case "marker_insert":
+          if (!ref.hasMarker(data.marker.id)) {
+            ref.addMarker(data.marker);
+          }
+          break;
+        case "marker_update":
+          if (ref.hasMarker(data.id)) {
+            ref.updateMarkerPos(data.id, data.x, data.y);
+          }
+          break;
+        case "marker_delete":
+          ref.removeMarker(data.id);
+          break;
+        case "drawing_insert":
+          if (!ref.hasDrawing(data.drawing.id)) {
+            ref.addDrawing(data.drawing);
+          }
+          break;
+        case "drawing_delete":
+          ref.removeDrawing(data.id);
+          break;
+      }
+    });
+
+    // ── Also keep postgres_changes as fallback (for users who reload mid-session)
     channel.on(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       "postgres_changes" as any,
@@ -81,7 +132,6 @@ export function useMapRealtime({
       }
     );
 
-    // ── Marker UPDATE ────────────────────────────────────────────────────
     channel.on(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       "postgres_changes" as any,
@@ -98,13 +148,11 @@ export function useMapRealtime({
         if (ref.hasMarker(marker.id)) {
           ref.updateMarkerPos(marker.id, marker.x, marker.y);
         } else {
-          // Rare: we missed the INSERT — just add it
           ref.addMarker(marker);
         }
       }
     );
 
-    // ── Marker DELETE ────────────────────────────────────────────────────
     channel.on(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       "postgres_changes" as any,
@@ -123,7 +171,6 @@ export function useMapRealtime({
       }
     );
 
-    // ── Drawing INSERT ───────────────────────────────────────────────────
     channel.on(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       "postgres_changes" as any,
@@ -142,7 +189,6 @@ export function useMapRealtime({
       }
     );
 
-    // ── Drawing DELETE ───────────────────────────────────────────────────
     channel.on(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       "postgres_changes" as any,
@@ -185,8 +231,22 @@ export function useMapRealtime({
     });
 
     return () => {
+      channelRef.current = null;
       channel.unsubscribe();
       supabase.removeChannel(channel);
     };
   }, [mapId, enabled, currentUserId, currentCallsign, canvasRef]);
+
+  // Stable broadcast function
+  const broadcast = useMemo(() => {
+    return (event: MapBroadcastEvent) => {
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "map_change",
+        payload: event,
+      });
+    };
+  }, []);
+
+  return { broadcast };
 }

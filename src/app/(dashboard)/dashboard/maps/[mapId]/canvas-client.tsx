@@ -59,7 +59,7 @@ export default function CanvasClient({
   const [sitrepOpen, setSitrepOpen] = useState(false);
 
   // ── Subscribe to realtime marker + drawing changes + presence ──────────
-  useMapRealtime({
+  const { broadcast } = useMapRealtime({
     mapId,
     canvasRef,
     currentUserId,
@@ -82,15 +82,34 @@ export default function CanvasClient({
       x,
       y,
     });
+    if (result.marker) {
+      broadcast({
+        type: "marker_insert",
+        marker: result.marker,
+        sender: currentUserId,
+      });
+    }
     return result.marker?.id ?? "";
   }
 
   function handleMarkerMoved(markerId: string, x: number, y: number) {
     updateMarkerPosition(markerId, x, y);
+    broadcast({
+      type: "marker_update",
+      id: markerId,
+      x,
+      y,
+      sender: currentUserId,
+    });
   }
 
   function handleMarkerDeleted(markerId: string) {
     deleteMarker(markerId);
+    broadcast({
+      type: "marker_delete",
+      id: markerId,
+      sender: currentUserId,
+    });
   }
 
   // ── Drawing callbacks wired to server actions ────────────────────────────
@@ -105,11 +124,23 @@ export default function CanvasClient({
       strokeColor: payload.strokeColor,
       strokeWidth: payload.strokeWidth,
     });
+    if (result.drawing) {
+      broadcast({
+        type: "drawing_insert",
+        drawing: result.drawing,
+        sender: currentUserId,
+      });
+    }
     return result.drawing?.id ?? "";
   }
 
   function handleDrawingDeleted(drawingId: string) {
     deleteDrawing(drawingId);
+    broadcast({
+      type: "drawing_delete",
+      id: drawingId,
+      sender: currentUserId,
+    });
   }
 
   // ── Other viewers (exclude self) ─────────────────────────────────────────
