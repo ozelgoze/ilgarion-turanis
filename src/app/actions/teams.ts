@@ -36,6 +36,28 @@ export async function createTeamAction(
     return { error: "AUTHENTICATION REQUIRED." };
   }
 
+  // Ensure profile exists (the trigger should create it on signup,
+  // but if it was missed we create it now)
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile) {
+    const callsign =
+      user.user_metadata?.callsign ??
+      `OPERATOR-${user.id.slice(0, 6).toUpperCase()}`;
+    const { error: profileErr } = await supabase
+      .from("profiles")
+      .insert({ id: user.id, callsign });
+    if (profileErr) {
+      return {
+        error: `PROFILE SETUP FAILED: ${profileErr.message.toUpperCase()}`,
+      };
+    }
+  }
+
   // Insert the team
   const { data: team, error: teamError } = await supabase
     .from("teams")
@@ -44,7 +66,12 @@ export async function createTeamAction(
     .single();
 
   if (teamError || !team) {
-    return { error: "FAILED TO REGISTER UNIT. TRY AGAIN." };
+    console.error("Team creation error:", teamError);
+    return {
+      error: teamError?.message
+        ? `REGISTRATION FAILED: ${teamError.message.toUpperCase()}`
+        : "FAILED TO REGISTER UNIT. TRY AGAIN.",
+    };
   }
 
   // Add creator as commander
@@ -55,9 +82,14 @@ export async function createTeamAction(
   });
 
   if (memberError) {
+    console.error("Member insert error:", memberError);
     // Clean up the orphaned team
     await supabase.from("teams").delete().eq("id", team.id);
-    return { error: "FAILED TO ASSIGN COMMAND ROLE. TRY AGAIN." };
+    return {
+      error: memberError?.message
+        ? `COMMAND ROLE FAILED: ${memberError.message.toUpperCase()}`
+        : "FAILED TO ASSIGN COMMAND ROLE. TRY AGAIN.",
+    };
   }
 
   redirect(`/dashboard/teams/${team.id}`);
