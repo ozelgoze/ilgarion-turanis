@@ -98,6 +98,9 @@ interface TacticalCanvasProps {
   onExportPNG?: () => void;
   onToggleSitrep?: () => void;
   sitrepOpen?: boolean;
+  // ─── Threat level ─────────────────────────────────
+  threatLevel?: import("@/types/database").ThreatLevel;
+  onThreatLevelChange?: (level: import("@/types/database").ThreatLevel) => void;
 }
 
 const GRID_COLOR = "rgba(0, 255, 204, 0.12)";
@@ -237,6 +240,8 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       onExportPNG,
       onToggleSitrep,
       sitrepOpen = false,
+      threatLevel = 0,
+      onThreatLevelChange,
     },
     ref
   ) {
@@ -1484,6 +1489,27 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           onExportPNG={onExportPNG}
           onToggleSitrep={onToggleSitrep}
           sitrepOpen={sitrepOpen}
+          threatLevel={threatLevel}
+          onThreatLevelChange={onThreatLevelChange}
+          onDeselect={() => {
+            const c = fabricRef.current;
+            if (!c) return;
+            c.discardActiveObject();
+            c.requestRenderAll();
+          }}
+          onDeleteSelected={() => {
+            const c = fabricRef.current;
+            if (!c || !canEdit) return;
+            const active = c.getActiveObject();
+            if (!active) return;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const obj = active as any;
+            if (obj.__markerId && onMarkerDeleted) {
+              onMarkerDeleted(obj.__markerId);
+            } else if (obj.__drawingId && onDrawingDeleted) {
+              onDrawingDeleted(obj.__drawingId);
+            }
+          }}
         />
 
         {/* Canvas container — also the drop zone */}

@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
-import type { TacticalMap, Profile } from "@/types/database";
+import type { TacticalMap, ThreatLevel, Profile } from "@/types/database";
 
 // ─── Create a map DB record (file already uploaded to Storage by client) ────
 
@@ -146,6 +146,27 @@ export async function getAllMyMaps(): Promise<MapWithTeam[]> {
 
   if (error || !data) return [];
   return data as MapWithTeam[];
+}
+
+// ─── Update map threat level ────────────────────────────────────────────────
+
+export async function updateMapThreatLevel(
+  mapId: string,
+  threatLevel: ThreatLevel
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "AUTHENTICATION REQUIRED." };
+
+  const { error } = await supabase
+    .from("maps")
+    .update({ threat_level: threatLevel })
+    .eq("id", mapId);
+
+  if (error) return { error: "FAILED TO UPDATE THREAT LEVEL." };
+  return {};
 }
 
 // ─── Get a single team's info with the requesting user's role ────────────────

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useMemo } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/client";
-import type { TacticalMarker, MapDrawing } from "@/types/database";
+import type { TacticalMarker, MapDrawing, ThreatLevel } from "@/types/database";
 import type { TacticalCanvasRef } from "@/components/canvas/tactical-canvas";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -21,7 +21,8 @@ export type MapBroadcastEvent =
   | { type: "marker_update_meta"; id: string; label: string | null; assignedCallsign: string | null; labelSize?: number; sender: string }
   | { type: "marker_delete"; id: string; sender: string }
   | { type: "drawing_insert"; drawing: MapDrawing; sender: string }
-  | { type: "drawing_delete"; id: string; sender: string };
+  | { type: "drawing_delete"; id: string; sender: string }
+  | { type: "threat_level_change"; threatLevel: ThreatLevel; sender: string };
 
 interface UseMapRealtimeParams {
   mapId: string;
@@ -30,6 +31,7 @@ interface UseMapRealtimeParams {
   currentCallsign: string;
   enabled?: boolean;
   onPresenceChange?: (users: PresenceUser[]) => void;
+  onThreatLevelChange?: (level: ThreatLevel) => void;
 }
 
 interface UseMapRealtimeReturn {
@@ -57,12 +59,18 @@ export function useMapRealtime({
   currentCallsign,
   enabled = true,
   onPresenceChange,
+  onThreatLevelChange,
 }: UseMapRealtimeParams): UseMapRealtimeReturn {
   // Keep the presence callback in a ref so effect doesn't re-run on change
   const presenceCbRef = useRef(onPresenceChange);
   useEffect(() => {
     presenceCbRef.current = onPresenceChange;
   }, [onPresenceChange]);
+
+  const threatCbRef = useRef(onThreatLevelChange);
+  useEffect(() => {
+    threatCbRef.current = onThreatLevelChange;
+  }, [onThreatLevelChange]);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
 
@@ -85,6 +93,12 @@ export function useMapRealtime({
 
       // Skip events from self (safety net — self:false should handle this)
       if (data.sender === currentUserId) return;
+
+      // Handle non-canvas events first
+      if (data.type === "threat_level_change") {
+        threatCbRef.current?.(data.threatLevel);
+        return;
+      }
 
       const ref = canvasRef.current;
       if (!ref) return;

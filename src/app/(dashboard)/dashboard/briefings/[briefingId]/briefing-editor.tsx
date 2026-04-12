@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { updateBriefing, deleteBriefing } from "@/app/actions/briefings";
 import { useRouter } from "next/navigation";
 import type { Briefing } from "@/types/database";
+import MarkdownRenderer from "@/components/markdown-renderer";
 
 interface BriefingEditorProps {
   briefing: Briefing & { profiles?: { callsign: string } };
@@ -179,15 +180,13 @@ export default function BriefingEditor({
                     setContent(e.target.value);
                     scheduleSave();
                   }}
-                  placeholder="Enter SITREP notes, mission details, waypoints, or operational intel...&#10;&#10;Supports plain text. Use line breaks and dashes for structure."
+                  placeholder="Enter SITREP notes, mission details, waypoints, or operational intel...&#10;&#10;Supports markdown: # Headers, **bold**, *italic*, `code`, - lists, --- rules"
                   className="w-full h-full resize-none bg-bg-void p-6 font-mono text-sm text-text-dim leading-relaxed tracking-wide outline-none placeholder:text-text-muted/40"
                 />
               ) : (
                 <div className="p-6 bg-bg-void h-full overflow-auto">
                   {content ? (
-                    <pre className="font-mono text-sm text-text-dim leading-relaxed tracking-wide whitespace-pre-wrap">
-                      {content}
-                    </pre>
+                    <MarkdownRenderer content={content} />
                   ) : (
                     <p className="font-mono text-[10px] text-text-muted tracking-widest uppercase">
                       No content yet.

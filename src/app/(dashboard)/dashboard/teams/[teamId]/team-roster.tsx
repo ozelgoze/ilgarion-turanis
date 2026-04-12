@@ -6,6 +6,7 @@ import {
   addTeamMember,
   updateMemberRole,
   removeTeamMember,
+  updateMemberShip,
 } from "@/app/actions/teams";
 import { ROLE_COLORS, ROLE_LABELS } from "@/types/database";
 import type { TeamRole, TeamMemberWithProfile } from "@/types/database";
@@ -31,6 +32,8 @@ export default function TeamRoster({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [editingShip, setEditingShip] = useState<string | null>(null);
+  const [shipValue, setShipValue] = useState("");
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -55,6 +58,16 @@ export default function TeamRoster({
     if (result.error) {
       setError(result.error);
     } else {
+      router.refresh();
+    }
+  }
+
+  async function handleShipSave(memberId: string) {
+    const result = await updateMemberShip(memberId, shipValue);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setEditingShip(null);
       router.refresh();
     }
   }
@@ -86,6 +99,9 @@ export default function TeamRoster({
               </th>
               <th className="text-left px-4 py-2 font-mono text-[9px] tracking-widest text-text-muted uppercase">
                 Role
+              </th>
+              <th className="text-left px-4 py-2 font-mono text-[9px] tracking-widest text-text-muted uppercase">
+                Ship Assignment
               </th>
               <th className="text-left px-4 py-2 font-mono text-[9px] tracking-widest text-text-muted uppercase">
                 Joined
@@ -154,6 +170,63 @@ export default function TeamRoster({
                       >
                         {ROLE_LABELS[m.role]}
                       </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {editingShip === m.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={shipValue}
+                          onChange={(e) => setShipValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleShipSave(m.id);
+                            if (e.key === "Escape") setEditingShip(null);
+                          }}
+                          placeholder="e.g. Retaliator"
+                          className="bg-bg-surface border border-border px-1.5 py-0.5 font-mono text-[10px] text-text-bright w-28 focus:border-accent/50 focus:outline-none"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleShipSave(m.id)}
+                          className="font-mono text-[8px] text-accent tracking-widest hover:text-accent/80"
+                        >
+                          OK
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          if (isCommander || isSelf) {
+                            setEditingShip(m.id);
+                            setShipValue(m.assigned_ship ?? m.profiles?.primary_ship ?? "");
+                          }
+                        }}
+                        className={[
+                          "font-mono text-[10px] tracking-widest",
+                          m.assigned_ship
+                            ? "text-amber"
+                            : m.profiles?.primary_ship
+                              ? "text-text-muted/60 italic"
+                              : "text-text-muted/30",
+                          (isCommander || isSelf) ? "hover:text-accent cursor-pointer" : "cursor-default",
+                        ].join(" ")}
+                        title={
+                          m.assigned_ship
+                            ? `Assigned: ${m.assigned_ship}`
+                            : m.profiles?.primary_ship
+                              ? `Default ship: ${m.profiles.primary_ship} (click to assign)`
+                              : isCommander || isSelf
+                                ? "Click to assign ship"
+                                : "No ship assigned"
+                        }
+                      >
+                        {m.assigned_ship
+                          ? m.assigned_ship.toUpperCase()
+                          : m.profiles?.primary_ship
+                            ? m.profiles.primary_ship.toUpperCase()
+                            : "—"}
+                      </button>
                     )}
                   </td>
                   <td className="px-4 py-2.5">

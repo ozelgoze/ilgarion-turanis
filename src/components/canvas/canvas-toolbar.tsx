@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import type { GridType } from "./tactical-canvas";
 import { DRAW_COLORS, DRAW_WIDTHS, type DrawTool } from "./drawing-helpers";
+import KeyboardShortcuts from "./keyboard-shortcuts";
+import ThreatIndicator from "./threat-indicator";
+import type { ThreatLevel } from "@/types/database";
 
 interface CanvasToolbarProps {
   zoom: number;
@@ -27,6 +30,14 @@ interface CanvasToolbarProps {
   onExportPNG?: () => void;
   onToggleSitrep?: () => void;
   sitrepOpen?: boolean;
+
+  // ─── Keyboard shortcut callbacks ─────────────────────────────
+  onDeselect?: () => void;
+  onDeleteSelected?: () => void;
+
+  // ─── Threat level ──────────────────────────────────────────
+  threatLevel?: ThreatLevel;
+  onThreatLevelChange?: (level: ThreatLevel) => void;
 }
 
 export default function CanvasToolbar({
@@ -48,8 +59,18 @@ export default function CanvasToolbar({
   onExportPNG,
   onToggleSitrep,
   sitrepOpen = false,
+  onDeselect,
+  onDeleteSelected,
+  threatLevel = 0,
+  onThreatLevelChange,
 }: CanvasToolbarProps) {
   const [gridMenuOpen, setGridMenuOpen] = useState(false);
+
+  const cycleGrid = useCallback(() => {
+    const cycle: GridType[] = ["none", "square", "hex"];
+    const idx = cycle.indexOf(gridType);
+    onGridTypeChange(cycle[(idx + 1) % cycle.length]);
+  }, [gridType, onGridTypeChange]);
 
   const zoomPct = Math.round(zoom * 100);
 
@@ -296,6 +317,15 @@ export default function CanvasToolbar({
 
       {/* ── Right-side action buttons ────────────────────── */}
       <div className="ml-auto flex items-center gap-1">
+        {/* Threat Condition */}
+        <ThreatIndicator
+          level={threatLevel as ThreatLevel}
+          canEdit={canEdit}
+          onChange={onThreatLevelChange ?? (() => {})}
+        />
+
+        <ToolbarDivider />
+
         {/* SITREP */}
         {onToggleSitrep && (
           <button
@@ -335,6 +365,19 @@ export default function CanvasToolbar({
         )}
 
         <ToolbarDivider />
+
+        <KeyboardShortcuts
+          canEdit={canEdit}
+          onDrawToolChange={onDrawToolChange as (tool: string) => void}
+          onZoomIn={onZoomIn}
+          onZoomOut={onZoomOut}
+          onFitView={onFitView}
+          onToggleGrid={cycleGrid}
+          onToggleSitrep={onToggleSitrep}
+          onExportPNG={onExportPNG}
+          onDeselect={onDeselect ?? (() => {})}
+          onDeleteSelected={onDeleteSelected}
+        />
 
         <span className="font-mono text-[10px] text-text-muted tracking-widest uppercase hidden md:block">
           MTC v7

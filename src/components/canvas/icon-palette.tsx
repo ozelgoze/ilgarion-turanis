@@ -6,9 +6,13 @@ import {
   getNatoSvg,
   AFFILIATION_COLORS,
   AFFILIATION_LABELS,
+  SC_AFFILIATION_LABELS,
   MARKER_TYPE_LABELS,
+  SC_MARKER_TYPE_LABELS,
+  SC_MARKER_TYPE_DESCRIPTIONS,
   ALL_MARKER_TYPES,
   ALL_AFFILIATIONS,
+  type IconLabelMode,
 } from "./nato-icons";
 
 interface IconPaletteProps {
@@ -19,10 +23,15 @@ interface IconPaletteProps {
 export default function IconPalette({ visible = true }: IconPaletteProps) {
   const [affiliation, setAffiliation] = useState<MarkerAffiliation>("friendly");
   const [collapsed, setCollapsed] = useState(false);
+  const [labelMode, setLabelMode] = useState<IconLabelMode>("sc");
 
   if (!visible) return null;
 
   const color = AFFILIATION_COLORS[affiliation];
+  const typeLabels =
+    labelMode === "sc" ? SC_MARKER_TYPE_LABELS : MARKER_TYPE_LABELS;
+  const affLabels =
+    labelMode === "sc" ? SC_AFFILIATION_LABELS : AFFILIATION_LABELS;
 
   function handleDragStart(
     e: React.DragEvent<HTMLDivElement>,
@@ -49,16 +58,20 @@ export default function IconPalette({ visible = true }: IconPaletteProps) {
       >
         {/* Hamburger icon */}
         <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
-          <rect x="3" y="5"  width="18" height="2" />
+          <rect x="3" y="5" width="18" height="2" />
           <rect x="3" y="11" width="18" height="2" />
           <rect x="3" y="17" width="18" height="2" />
         </svg>
         <span className="font-mono text-[8px] tracking-[0.2em] uppercase">
-          Icons
+          {labelMode === "sc" ? "SC Units" : "NATO"}
         </span>
         <svg
-          width="8" height="8" viewBox="0 0 24 24"
-          fill="none" stroke="currentColor" strokeWidth="3"
+          width="8"
+          height="8"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
           className={`ml-0.5 transition-transform ${collapsed ? "" : "rotate-180"}`}
         >
           <polyline points="6 9 12 15 18 9" />
@@ -70,6 +83,32 @@ export default function IconPalette({ visible = true }: IconPaletteProps) {
           className="bg-bg-surface border border-t-0 border-border flex flex-col overflow-hidden"
           style={{ width: 116 }}
         >
+          {/* NATO / SC mode toggle */}
+          <div className="flex border-b border-border">
+            <button
+              onClick={() => setLabelMode("sc")}
+              className={[
+                "flex-1 py-1 font-mono text-[7px] tracking-widest uppercase transition-colors",
+                labelMode === "sc"
+                  ? "text-accent bg-accent/10 border-b-2 border-accent"
+                  : "text-text-muted hover:text-text-dim border-b-2 border-transparent",
+              ].join(" ")}
+            >
+              Star Citizen
+            </button>
+            <button
+              onClick={() => setLabelMode("nato")}
+              className={[
+                "flex-1 py-1 font-mono text-[7px] tracking-widest uppercase transition-colors",
+                labelMode === "nato"
+                  ? "text-accent bg-accent/10 border-b-2 border-accent"
+                  : "text-text-muted hover:text-text-dim border-b-2 border-transparent",
+              ].join(" ")}
+            >
+              NATO
+            </button>
+          </div>
+
           {/* Affiliation selector */}
           <div className="flex border-b border-border">
             {ALL_AFFILIATIONS.map((aff) => {
@@ -78,7 +117,7 @@ export default function IconPalette({ visible = true }: IconPaletteProps) {
                 <button
                   key={aff}
                   onClick={() => setAffiliation(aff)}
-                  title={AFFILIATION_LABELS[aff]}
+                  title={affLabels[aff]}
                   className="flex-1 h-6 transition-opacity"
                   style={{
                     backgroundColor: active
@@ -95,7 +134,7 @@ export default function IconPalette({ visible = true }: IconPaletteProps) {
                     className="block w-2 h-2 rounded-full mx-auto"
                     style={{ backgroundColor: AFFILIATION_COLORS[aff] }}
                   />
-                  <span className="sr-only">{AFFILIATION_LABELS[aff]}</span>
+                  <span className="sr-only">{affLabels[aff]}</span>
                 </button>
               );
             })}
@@ -107,7 +146,7 @@ export default function IconPalette({ visible = true }: IconPaletteProps) {
               className="font-mono text-[8px] tracking-[0.15em] uppercase font-semibold"
               style={{ color }}
             >
-              {AFFILIATION_LABELS[affiliation]}
+              {affLabels[affiliation]}
             </span>
           </div>
 
@@ -115,12 +154,16 @@ export default function IconPalette({ visible = true }: IconPaletteProps) {
           <div className="p-1.5 grid grid-cols-2 gap-1 overflow-y-auto">
             {ALL_MARKER_TYPES.map((type) => {
               const svg = getNatoSvg(type, affiliation);
+              const tooltip =
+                labelMode === "sc"
+                  ? SC_MARKER_TYPE_DESCRIPTIONS[type]
+                  : `${MARKER_TYPE_LABELS[type]} · ${AFFILIATION_LABELS[affiliation]}`;
               return (
                 <div
                   key={type}
                   draggable
                   onDragStart={(e) => handleDragStart(e, type, affiliation)}
-                  title={`${MARKER_TYPE_LABELS[type]} · ${AFFILIATION_LABELS[affiliation]}`}
+                  title={tooltip}
                   className="
                     flex flex-col items-center gap-0.5 p-1 select-none
                     border border-transparent cursor-grab active:cursor-grabbing
@@ -136,7 +179,7 @@ export default function IconPalette({ visible = true }: IconPaletteProps) {
                     className="font-mono text-[6.5px] tracking-wide text-center leading-tight uppercase"
                     style={{ color }}
                   >
-                    {MARKER_TYPE_LABELS[type]}
+                    {typeLabels[type]}
                   </span>
                 </div>
               );

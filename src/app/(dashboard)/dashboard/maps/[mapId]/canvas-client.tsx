@@ -19,6 +19,7 @@ import type {
   MapDrawing,
   Briefing,
   TeamMemberWithProfile,
+  ThreatLevel,
 } from "@/types/database";
 import {
   createMarker,
@@ -30,6 +31,7 @@ import {
   createDrawing,
   deleteDrawing,
 } from "@/app/actions/drawings";
+import { updateMapThreatLevel } from "@/app/actions/maps";
 import { useMapRealtime, type PresenceUser } from "@/hooks/use-map-realtime";
 
 interface CanvasClientProps {
@@ -45,6 +47,7 @@ interface CanvasClientProps {
   currentUserId: string;
   currentCallsign: string;
   teamMembers: TeamMemberWithProfile[];
+  initialThreatLevel: ThreatLevel;
 }
 
 export default function CanvasClient({
@@ -60,11 +63,13 @@ export default function CanvasClient({
   currentUserId,
   currentCallsign,
   teamMembers,
+  initialThreatLevel,
 }: CanvasClientProps) {
   const canvasRef = useRef<TacticalCanvasRef | null>(null);
   const [presence, setPresence] = useState<PresenceUser[]>([]);
   const [sitrepOpen, setSitrepOpen] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<MarkerContextMenuData | null>(null);
+  const [threatLevel, setThreatLevel] = useState<ThreatLevel>(initialThreatLevel);
 
   // ── Subscribe to realtime marker + drawing changes + presence ──────────
   const { broadcast } = useMapRealtime({
@@ -73,6 +78,7 @@ export default function CanvasClient({
     currentUserId,
     currentCallsign,
     onPresenceChange: setPresence,
+    onThreatLevelChange: setThreatLevel,
   });
 
   // ── Build a lookup map: userId → callsign ─────────────────────────────
@@ -211,6 +217,17 @@ export default function CanvasClient({
     link.click();
   }
 
+  // ── Threat level change ──────────────────────────────────────────────────
+  async function handleThreatLevelChange(level: ThreatLevel) {
+    setThreatLevel(level);
+    await updateMapThreatLevel(mapId, level);
+    broadcast({
+      type: "threat_level_change",
+      threatLevel: level,
+      sender: currentUserId,
+    });
+  }
+
   // ── Other viewers (exclude self) ─────────────────────────────────────────
   const others = presence.filter((u) => u.user_id !== currentUserId);
 
@@ -238,6 +255,8 @@ export default function CanvasClient({
         onExportPNG={handleExportPNG}
         onToggleSitrep={() => setSitrepOpen((v) => !v)}
         sitrepOpen={sitrepOpen}
+        threatLevel={threatLevel}
+        onThreatLevelChange={handleThreatLevelChange}
       />
 
       {/* ── Presence Overlay (center bottom) ──────── */}

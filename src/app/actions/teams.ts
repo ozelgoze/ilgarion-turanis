@@ -156,7 +156,7 @@ export async function getTeamMembers(
 
   const { data, error } = await supabase
     .from("team_members")
-    .select("*, profiles:user_id(id, callsign, avatar_url, created_at, updated_at)")
+    .select("*, profiles:user_id(id, callsign, avatar_url, sc_handle, primary_ship, sc_org, created_at, updated_at)")
     .eq("team_id", teamId)
     .order("joined_at", { ascending: true });
 
@@ -291,5 +291,45 @@ export async function removeTeamMember(
     .eq("id", memberId);
 
   if (error) return { error: "FAILED TO REMOVE OPERATIVE." };
+  return {};
+}
+
+// ─── Update a member's assigned ship ──────────────────────────────────────
+
+export async function updateMemberShip(
+  memberId: string,
+  assignedShip: string | null
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "AUTHENTICATION REQUIRED." };
+
+  const { data: target } = await supabase
+    .from("team_members")
+    .select("team_id, user_id")
+    .eq("id", memberId)
+    .single();
+  if (!target) return { error: "MEMBERSHIP NOT FOUND." };
+
+  // Commanders can assign anyone's ship, members can assign their own
+  if (target.user_id !== user.id) {
+    const { data: myMembership } = await supabase
+      .from("team_members")
+      .select("role")
+      .eq("team_id", target.team_id)
+      .eq("user_id", user.id)
+      .eq("role", "commander")
+      .single();
+    if (!myMembership) return { error: "COMMANDER CLEARANCE REQUIRED." };
+  }
+
+  const { error } = await supabase
+    .from("team_members")
+    .update({ assigned_ship: assignedShip?.trim() || null })
+    .eq("id", memberId);
+
+  if (error) return { error: "FAILED TO UPDATE SHIP ASSIGNMENT." };
   return {};
 }

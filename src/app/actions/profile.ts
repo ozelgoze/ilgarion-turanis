@@ -45,3 +45,39 @@ export async function updateCallsign(
   if (error) return { error: "FAILED TO UPDATE CALLSIGN." };
   return {};
 }
+
+export async function updateScProfile(fields: {
+  sc_handle?: string;
+  primary_ship?: string;
+  sc_org?: string;
+}): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "AUTHENTICATION REQUIRED." };
+
+  const update: Record<string, string | null> = {};
+  if (fields.sc_handle !== undefined) {
+    const trimmed = fields.sc_handle.trim();
+    update.sc_handle = trimmed || null;
+  }
+  if (fields.primary_ship !== undefined) {
+    const trimmed = fields.primary_ship.trim();
+    update.primary_ship = trimmed || null;
+  }
+  if (fields.sc_org !== undefined) {
+    const trimmed = fields.sc_org.trim();
+    update.sc_org = trimmed || null;
+  }
+
+  if (Object.keys(update).length === 0) return {};
+
+  const { error } = await supabase
+    .from("profiles")
+    .update(update)
+    .eq("id", user.id);
+
+  if (error) return { error: "FAILED TO UPDATE SC PROFILE." };
+  return {};
+}

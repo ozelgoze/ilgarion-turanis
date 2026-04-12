@@ -139,12 +139,50 @@ export const MARKER_TYPE_LABELS: Record<MarkerType, string> = {
   custom:    "Custom",
 };
 
+/** Star Citizen-specific labels mapping to the same marker types */
+export const SC_MARKER_TYPE_LABELS: Record<MarkerType, string> = {
+  infantry:  "FPS Team",
+  armor:     "Ground Veh",
+  air:       "Fighters",
+  naval:     "Capital Ship",
+  artillery: "Bombers",
+  hq:        "Flagship",
+  recon:     "Scouts",
+  medical:   "Medical",
+  logistics: "Cargo/Supply",
+  custom:    "POI",
+};
+
+/** Star Citizen-specific descriptions for tooltips */
+export const SC_MARKER_TYPE_DESCRIPTIONS: Record<MarkerType, string> = {
+  infantry:  "FPS Team — Ground forces, marines, boarding party",
+  armor:     "Ground Vehicle — Tonk, Ballista, Ursa, ROC, Centurion",
+  air:       "Fighters — Gladius, Arrow, Sabre, Hornet, Vanguard",
+  naval:     "Capital Ship — Hammerhead, Idris, Javelin, Polaris, Perseus",
+  artillery: "Bombers — Retaliator, Eclipse, Ares, A2 Hercules",
+  hq:        "Flagship — Command vessel, Carrack, 890 Jump",
+  recon:     "Scouts — Terrapin, Herald, DUR, Pisces",
+  medical:   "Medical — Cutlass Red, Apollo, med station",
+  logistics: "Cargo/Supply — Hull C, Caterpillar, C2 Hercules, RAFT",
+  custom:    "Point of Interest — Comm array, outpost, cave, wreck",
+};
+
 export const AFFILIATION_LABELS: Record<MarkerAffiliation, string> = {
   friendly: "Friendly",
   hostile:  "Hostile",
   neutral:  "Neutral",
   unknown:  "Unknown",
 };
+
+/** Star Citizen-specific affiliation labels */
+export const SC_AFFILIATION_LABELS: Record<MarkerAffiliation, string> = {
+  friendly: "Org/Allied",
+  hostile:  "Hostile/PvP",
+  neutral:  "Civilian",
+  unknown:  "Unidentified",
+};
+
+export type IconLabelMode = "nato" | "sc";
 
 export const ALL_MARKER_TYPES: MarkerType[] = [
   "infantry", "armor", "air", "naval", "artillery",

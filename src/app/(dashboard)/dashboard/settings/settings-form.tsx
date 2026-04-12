@@ -2,17 +2,23 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { updateCallsign } from "@/app/actions/profile";
+import { updateCallsign, updateScProfile } from "@/app/actions/profile";
 import { createClient } from "@/utils/supabase/client";
 
 interface SettingsFormProps {
   currentCallsign: string;
   email: string;
+  scHandle: string;
+  primaryShip: string;
+  scOrg: string;
 }
 
 export default function SettingsForm({
   currentCallsign,
   email,
+  scHandle: initialScHandle,
+  primaryShip: initialPrimaryShip,
+  scOrg: initialScOrg,
 }: SettingsFormProps) {
   const router = useRouter();
   const [callsign, setCallsign] = useState(currentCallsign);
@@ -20,6 +26,14 @@ export default function SettingsForm({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+
+  // SC profile fields
+  const [scHandle, setScHandle] = useState(initialScHandle);
+  const [primaryShip, setPrimaryShip] = useState(initialPrimaryShip);
+  const [scOrg, setScOrg] = useState(initialScOrg);
+  const [scSaving, setScSaving] = useState(false);
+  const [scSaved, setScSaved] = useState(false);
+  const [scError, setScError] = useState<string | null>(null);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -37,6 +51,31 @@ export default function SettingsForm({
       router.refresh();
     }
   }
+
+  async function handleScSave(e: React.FormEvent) {
+    e.preventDefault();
+    setScSaving(true);
+    setScError(null);
+    setScSaved(false);
+
+    const result = await updateScProfile({
+      sc_handle: scHandle,
+      primary_ship: primaryShip,
+      sc_org: scOrg,
+    });
+    setScSaving(false);
+    if (result.error) {
+      setScError(result.error);
+    } else {
+      setScSaved(true);
+      router.refresh();
+    }
+  }
+
+  const scDirty =
+    scHandle !== initialScHandle ||
+    primaryShip !== initialPrimaryShip ||
+    scOrg !== initialScOrg;
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -101,6 +140,109 @@ export default function SettingsForm({
             <div className="border border-danger/30 bg-danger/5 px-3 py-2">
               <p className="font-mono text-[10px] text-danger tracking-widest">
                 ⚠ {error}
+              </p>
+            </div>
+          )}
+        </form>
+      </div>
+
+      {/* Star Citizen Profile */}
+      <div className="mtc-panel bg-bg-surface p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-1 h-5 bg-amber" />
+          <h2 className="font-mono text-xs tracking-[0.25em] text-text-dim uppercase">
+            Star Citizen Profile
+          </h2>
+        </div>
+
+        <form onSubmit={handleScSave} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="block font-mono text-[10px] tracking-[0.2em] text-text-dim uppercase">
+                SC Handle
+              </label>
+              <input
+                type="text"
+                maxLength={40}
+                value={scHandle}
+                onChange={(e) => {
+                  setScHandle(e.target.value);
+                  setScSaved(false);
+                  setScError(null);
+                }}
+                placeholder="e.g. CitizenXyz"
+                className="mtc-input font-mono text-sm max-w-full"
+                disabled={scSaving}
+              />
+              <p className="font-mono text-[9px] text-text-muted tracking-widest">
+                Your RSI / Star Citizen community handle.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block font-mono text-[10px] tracking-[0.2em] text-text-dim uppercase">
+                SC Org
+              </label>
+              <input
+                type="text"
+                maxLength={60}
+                value={scOrg}
+                onChange={(e) => {
+                  setScOrg(e.target.value);
+                  setScSaved(false);
+                  setScError(null);
+                }}
+                placeholder="e.g. ILGARION"
+                className="mtc-input font-mono text-sm uppercase max-w-full"
+                disabled={scSaving}
+              />
+              <p className="font-mono text-[9px] text-text-muted tracking-widest">
+                Your Star Citizen organization.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block font-mono text-[10px] tracking-[0.2em] text-text-dim uppercase">
+              Primary Ship
+            </label>
+            <input
+              type="text"
+              maxLength={60}
+              value={primaryShip}
+              onChange={(e) => {
+                setPrimaryShip(e.target.value);
+                setScSaved(false);
+                setScError(null);
+              }}
+              placeholder="e.g. Aegis Retaliator"
+              className="mtc-input font-mono text-sm max-w-sm"
+              disabled={scSaving}
+            />
+            <p className="font-mono text-[9px] text-text-muted tracking-widest">
+              Your main ship — displayed on the team roster.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={scSaving || !scDirty}
+              className="mtc-btn-primary"
+            >
+              {scSaving ? "SAVING..." : "SAVE SC PROFILE"}
+            </button>
+            {scSaved && (
+              <span className="font-mono text-[10px] text-accent tracking-widest">
+                SAVED
+              </span>
+            )}
+          </div>
+
+          {scError && (
+            <div className="border border-danger/30 bg-danger/5 px-3 py-2">
+              <p className="font-mono text-[10px] text-danger tracking-widest">
+                {scError}
               </p>
             </div>
           )}

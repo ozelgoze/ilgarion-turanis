@@ -40,6 +40,9 @@ export default async function SettingsPage() {
       <SettingsForm
         currentCallsign={profile?.callsign ?? ""}
         email={user.email ?? ""}
+        scHandle={profile?.sc_handle ?? ""}
+        primaryShip={profile?.primary_ship ?? ""}
+        scOrg={profile?.sc_org ?? ""}
       />
     </div>
   );

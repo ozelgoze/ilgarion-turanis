@@ -29,6 +29,9 @@ export interface Profile {
   id: string;
   callsign: string;
   avatar_url: string | null;
+  sc_handle: string | null;
+  primary_ship: string | null;
+  sc_org: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -48,8 +51,18 @@ export interface TeamMember {
   team_id: string;
   user_id: string;
   role: TeamRole;
+  assigned_ship: string | null;
   joined_at: string;
 }
+
+export type ThreatLevel = 0 | 1 | 2 | 3;
+
+export const THREAT_LEVELS: Record<ThreatLevel, { label: string; color: string; description: string }> = {
+  0: { label: "GREEN", color: "#00ffcc", description: "No threat — routine operations" },
+  1: { label: "YELLOW", color: "#F0A500", description: "Elevated — possible hostile activity" },
+  2: { label: "ORANGE", color: "#FF8C00", description: "High — confirmed hostile presence" },
+  3: { label: "RED", color: "#FF2442", description: "Critical — active engagement / under attack" },
+};
 
 export interface TacticalMap {
   id: string;
@@ -61,6 +74,7 @@ export interface TacticalMap {
   grid_size: number;
   scale_factor: number;
   canvas_state: Record<string, unknown> | null;
+  threat_level: ThreatLevel;
   created_by: string;
   created_at: string;
   updated_at: string;

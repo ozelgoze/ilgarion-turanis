@@ -6,7 +6,7 @@ import { getMapMarkers } from "@/app/actions/markers";
 import { getMapDrawings } from "@/app/actions/drawings";
 import { getTeamBriefings } from "@/app/actions/briefings";
 import { getTeamMembers } from "@/app/actions/teams";
-import { canEdit as checkCanEdit } from "@/types/database";
+import { canEdit as checkCanEdit, type ThreatLevel } from "@/types/database";
 import { createClient } from "@/utils/supabase/server";
 import CanvasClient from "./canvas-client";
 import type { GridType } from "@/components/canvas/tactical-canvas";
@@ -138,6 +138,7 @@ export default async function MapCanvasPage({ params }: PageProps) {
         currentUserId={user.id}
         currentCallsign={currentCallsign}
         teamMembers={teamMembers}
+        initialThreatLevel={(map.threat_level ?? 0) as ThreatLevel}
       />
     </div>
   );
