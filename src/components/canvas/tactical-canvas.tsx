@@ -628,25 +628,6 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
                 strokeDashArray: [6, 4],
               };
               preview = new fabric.Line([sx, sy, x, y], measureCommon);
-              // Distance label
-              const dist = Math.hypot(x - sx, y - sy) * scaleFactorRef.current;
-              const mx = (sx + x) / 2;
-              const my = (sy + y) / 2;
-              const label = new fabric.Text(
-                `${dist.toFixed(1)}u`,
-                {
-                  left: mx,
-                  top: my - 14,
-                  fontSize: 12,
-                  fontFamily: "monospace",
-                  fill: "#F0A500",
-                  selectable: false,
-                  evented: false,
-                  originX: "center",
-                  originY: "center",
-                }
-              );
-              extraObjs = [label];
               break;
             }
             default:
