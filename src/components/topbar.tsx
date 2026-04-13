@@ -1,10 +1,16 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import { logoutAction } from "@/app/actions/auth";
+import type { PartyNotification } from "@/types/database";
+import PartyNotifications from "@/components/party-notifications";
 
 interface TopBarProps {
   callsign: string;
+  notifications: PartyNotification[];
 }
 
-export default function TopBar({ callsign }: TopBarProps) {
+export default function TopBar({ callsign, notifications }: TopBarProps) {
   return (
     <header className="h-10 shrink-0 bg-bg-surface border-b border-border flex items-center justify-between px-4">
       {/* Left: Status indicators */}
@@ -21,8 +27,12 @@ export default function TopBar({ callsign }: TopBarProps) {
         </span>
       </div>
 
-      {/* Right: User + Logout */}
+      {/* Right: Notifications + User + Logout */}
       <div className="flex items-center gap-3">
+        <PartyNotifications notifications={notifications} />
+
+        <div className="w-px h-3 bg-border" />
+
         <div className="flex items-center gap-2">
           <div className="w-5 h-5 border border-accent/30 bg-accent/10 flex items-center justify-center">
             <span className="font-mono text-[9px] text-accent font-bold">

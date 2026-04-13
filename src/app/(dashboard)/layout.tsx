@@ -2,6 +2,7 @@ import { createClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
 import Sidebar from "@/components/sidebar";
 import TopBar from "@/components/topbar";
+import { getMyPartyNotifications } from "@/app/actions/parties";
 
 export default async function DashboardLayout({
   children,
@@ -15,18 +16,26 @@ export default async function DashboardLayout({
 
   if (!user) redirect("/login");
 
-  // Fetch the current user's profile
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("callsign, avatar_url")
-    .eq("id", user.id)
-    .single();
+  // Fetch the current user's profile and notifications in parallel
+  const [profileResult, notifications] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("callsign, avatar_url")
+      .eq("id", user.id)
+      .single(),
+    getMyPartyNotifications(),
+  ]);
+
+  const profile = profileResult.data;
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg-primary">
       <Sidebar />
       <div className="flex flex-col flex-1 min-w-0">
-        <TopBar callsign={profile?.callsign ?? "OPERATIVE"} />
+        <TopBar
+          callsign={profile?.callsign ?? "OPERATIVE"}
+          notifications={notifications}
+        />
         <main className="flex-1 overflow-auto">{children}</main>
       </div>
     </div>

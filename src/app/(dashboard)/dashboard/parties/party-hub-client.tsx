@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { createClient } from "@/utils/supabase/client";
 import PageTransition from "@/components/page-transition";
 import {
   PARTY_ACTIVITIES,
@@ -67,6 +68,43 @@ export default function PartyHubClient({
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
 
+  // ── Real-time: listen for party list changes via broadcast ──
+  const channelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
+
+  const refreshList = useCallback(async () => {
+    const results = await searchParties({
+      activity: searchActivity || undefined,
+      search: searchText || undefined,
+      region: searchRegion || undefined,
+      sort: searchSort,
+    });
+    setParties(results);
+  }, [searchActivity, searchText, searchRegion, searchSort]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("party-hub", { config: { broadcast: { self: false } } })
+      .on("broadcast", { event: "party_list_change" }, () => {
+        refreshList();
+      })
+      .subscribe();
+
+    channelRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+      channelRef.current = null;
+    };
+  }, [refreshList]);
+
+  function broadcastListChange() {
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "party_list_change",
+      payload: { sender: currentUserId },
+    });
+  }
+
   async function handleSearch() {
     setSearching(true);
     const results = await searchParties({
@@ -97,6 +135,7 @@ export default function PartyHubClient({
     if (result.error) {
       setCreateError(result.error);
     } else if (result.party) {
+      broadcastListChange();
       router.push(`/dashboard/parties/${result.party.id}`);
     }
   }
@@ -110,6 +149,7 @@ export default function PartyHubClient({
       setJoinError(result.error);
       setTimeout(() => setJoinError(null), 3000);
     } else {
+      broadcastListChange();
       router.push(`/dashboard/parties/${partyId}`);
     }
   }

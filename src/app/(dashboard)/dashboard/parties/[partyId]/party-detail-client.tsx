@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { createClient } from "@/utils/supabase/client";
 import PageTransition from "@/components/page-transition";
 import {
   PARTY_ACTIVITIES,
@@ -20,6 +21,7 @@ import {
   getPartyMessages,
   getParty,
   editParty,
+  toggleReady,
 } from "@/app/actions/parties";
 import { usePartyRealtime } from "@/hooks/use-party-realtime";
 
@@ -53,6 +55,7 @@ export default function PartyDetailClient({
   const [editDesc, setEditDesc] = useState("");
   const [editMax, setEditMax] = useState(4);
   const [editVoice, setEditVoice] = useState("");
+  const [readyLoading, setReadyLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const activity = PARTY_ACTIVITIES[party.activity];
@@ -77,7 +80,24 @@ export default function PartyDetailClient({
     setMessages(msgs);
   }, [party.id]);
 
-  usePartyRealtime({
+  // Also notify the party hub list so other users browsing see updates
+  const hubChannelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
+  useEffect(() => {
+    const supabase = createClient();
+    const ch = supabase.channel("party-hub", { config: { broadcast: { self: false } } }).subscribe();
+    hubChannelRef.current = ch;
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  function broadcastHubChange() {
+    hubChannelRef.current?.send({
+      type: "broadcast",
+      event: "party_list_change",
+      payload: { sender: currentUserId },
+    });
+  }
+
+  const { broadcast } = usePartyRealtime({
     partyId: party.id,
     currentUserId,
     onPartyChange: refreshParty,
@@ -90,17 +110,27 @@ export default function PartyDetailClient({
     },
   });
 
-  async function handleAction(action: () => Promise<{ error?: string }>, redirectTo?: string) {
+  async function handleAction(
+    action: () => Promise<{ error?: string }>,
+    redirectTo?: string,
+    broadcastType?: "party_update" | "members_change",
+  ) {
     setLoading(true);
     setError(null);
     const result = await action();
     setLoading(false);
     if (result.error) {
       setError(result.error);
-    } else if (redirectTo) {
-      router.push(redirectTo);
     } else {
-      await refreshParty();
+      if (broadcastType) {
+        broadcast({ type: broadcastType, sender: currentUserId });
+        broadcastHubChange(); // notify party hub list
+      }
+      if (redirectTo) {
+        router.push(redirectTo);
+      } else {
+        await refreshParty();
+      }
     }
   }
 
@@ -111,8 +141,18 @@ export default function PartyDetailClient({
     if (result.error) {
       setError(result.error);
     } else {
+      broadcast({ type: "members_change", sender: currentUserId });
+      broadcastHubChange();
       await refreshParty();
     }
+  }
+
+  async function handleToggleReady() {
+    setReadyLoading(true);
+    await toggleReady(party.id);
+    await refreshParty();
+    setReadyLoading(false);
+    broadcast({ type: "members_change", sender: currentUserId });
   }
 
   function handleCopyLink() {
@@ -146,6 +186,7 @@ export default function PartyDetailClient({
       setError(result.error);
     } else {
       setEditing(false);
+      broadcast({ type: "party_update", sender: currentUserId });
       await refreshParty();
     }
   }
@@ -165,6 +206,8 @@ export default function PartyDetailClient({
     } else {
       setMsgInput("");
       await refreshMessages();
+      // Broadcast to other clients so they refresh immediately
+      broadcast({ type: "party_message", sender: currentUserId });
     }
   }
 
@@ -358,7 +401,7 @@ export default function PartyDetailClient({
       <div className="flex flex-wrap items-center gap-3 mb-6">
         {!isMember && !isCreator && party.status === "open" && (
           <button
-            onClick={() => handleAction(() => joinParty(party.id))}
+            onClick={() => handleAction(() => joinParty(party.id), undefined, "members_change")}
             disabled={loading}
             className="mtc-btn-primary"
           >
@@ -367,7 +410,7 @@ export default function PartyDetailClient({
         )}
         {isMember && !isCreator && (
           <button
-            onClick={() => confirmThen("leave this party", () => handleAction(() => leaveParty(party.id), "/dashboard/parties"))}
+            onClick={() => confirmThen("leave this party", () => handleAction(() => leaveParty(party.id), "/dashboard/parties", "members_change"))}
             disabled={loading}
             className="mtc-btn-ghost text-danger border-danger/30 hover:bg-danger/10"
           >
@@ -378,7 +421,7 @@ export default function PartyDetailClient({
           <>
             {party.status === "open" && (
               <button
-                onClick={() => handleAction(() => updatePartyStatus(party.id, "in_progress"))}
+                onClick={() => handleAction(() => updatePartyStatus(party.id, "in_progress"), undefined, "party_update")}
                 disabled={loading}
                 className="mtc-btn-primary"
               >
@@ -387,7 +430,7 @@ export default function PartyDetailClient({
             )}
             {party.status === "in_progress" && (
               <button
-                onClick={() => handleAction(() => updatePartyStatus(party.id, "open"))}
+                onClick={() => handleAction(() => updatePartyStatus(party.id, "open"), undefined, "party_update")}
                 disabled={loading}
                 className="mtc-btn-ghost"
               >
@@ -400,7 +443,7 @@ export default function PartyDetailClient({
                   EDIT
                 </button>
                 <button
-                  onClick={() => confirmThen("close this party", () => handleAction(() => closeParty(party.id), "/dashboard/parties"))}
+                  onClick={() => confirmThen("close this party", () => handleAction(() => closeParty(party.id), "/dashboard/parties", "party_update"))}
                   disabled={loading}
                   className="mtc-btn-ghost text-danger border-danger/30 hover:bg-danger/10"
                 >
@@ -430,10 +473,48 @@ export default function PartyDetailClient({
             <h2 className="font-mono text-xs tracking-[0.25em] text-text-dim uppercase">
               Party Members
             </h2>
+            {/* Ready count */}
+            {party.members && party.members.length > 0 && party.status !== "closed" && (
+              <span className="font-mono text-[8px] tracking-widest text-accent/60 uppercase">
+                {party.members.filter((m) => m.ready).length}/{party.members.length} READY
+              </span>
+            )}
             <span className="font-mono text-[9px] text-text-muted tracking-widest ml-auto">
               {party.member_count}/{party.max_players}
             </span>
           </div>
+
+          {/* Ready up button for current member */}
+          {(isMember || isCreator) && party.status !== "closed" && (
+            <div className="mb-4">
+              {(() => {
+                const myMembership = party.members?.find((m) => m.user_id === currentUserId);
+                const amReady = myMembership?.ready ?? false;
+                const allReady = party.members?.every((m) => m.ready) && (party.members?.length ?? 0) > 0;
+                return (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleToggleReady}
+                      disabled={readyLoading}
+                      className={[
+                        "font-mono text-[10px] tracking-widest uppercase px-4 py-1.5 border transition-all",
+                        amReady
+                          ? "bg-accent/15 border-accent/40 text-accent"
+                          : "bg-transparent border-border text-text-muted hover:border-accent/30 hover:text-text-dim",
+                      ].join(" ")}
+                    >
+                      {readyLoading ? "..." : amReady ? "READY" : "READY UP"}
+                    </button>
+                    {allReady && (
+                      <span className="font-mono text-[9px] tracking-widest text-accent animate-pulse uppercase">
+                        All members ready!
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
           {(!party.members || party.members.length === 0) ? (
             <p className="font-mono text-[10px] text-text-muted tracking-widest text-center py-6">
@@ -454,6 +535,14 @@ export default function PartyDetailClient({
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
+                        {/* Ready indicator dot */}
+                        <span
+                          className={[
+                            "w-1.5 h-1.5 shrink-0 transition-colors",
+                            member.ready ? "bg-accent" : "bg-text-muted/30",
+                          ].join(" ")}
+                          title={member.ready ? "Ready" : "Not ready"}
+                        />
                         <span className="font-mono text-[11px] text-text-bright tracking-wider">
                           {profile?.callsign ?? "UNKNOWN"}
                         </span>

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { updateBriefing, deleteBriefing } from "@/app/actions/briefings";
+import { updateBriefing, deleteBriefing, getBriefing } from "@/app/actions/briefings";
 import { useRouter } from "next/navigation";
 import type { Briefing } from "@/types/database";
 import MarkdownRenderer from "@/components/markdown-renderer";
+import { createClient } from "@/utils/supabase/client";
 
 interface BriefingEditorProps {
   briefing: Briefing & { profiles?: { callsign: string } };
@@ -27,6 +28,38 @@ export default function BriefingEditor({
     briefing.embed_url ? "embed" : "notes"
   );
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const channelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
+
+  // ── Real-time: broadcast edits to other viewers ──────────────────────
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`briefing:${briefing.id}`, { config: { broadcast: { self: false } } })
+      .on("broadcast", { event: "briefing_update" }, async () => {
+        // Another user saved — fetch latest data
+        const updated = await getBriefing(briefing.id);
+        if (updated) {
+          setTitle(updated.title);
+          setContent(updated.content ?? "");
+          setEmbedUrl(updated.embed_url ?? "");
+        }
+      })
+      .subscribe();
+
+    channelRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+      channelRef.current = null;
+    };
+  }, [briefing.id]);
+
+  function broadcastBriefingChange() {
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "briefing_update",
+      payload: {},
+    });
+  }
 
   // ── Auto-save debounce (2s after last keystroke) ──────────────────────
   const scheduleSave = useCallback(() => {
@@ -53,6 +86,7 @@ export default function BriefingEditor({
       setError(result.error);
     } else {
       setSaved(true);
+      broadcastBriefingChange();
     }
   }
 

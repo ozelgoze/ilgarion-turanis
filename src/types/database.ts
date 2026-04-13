@@ -223,6 +223,7 @@ export interface PartyMember {
   id: string;
   party_id: string;
   user_id: string;
+  ready: boolean;
   joined_at: string;
 }
 
@@ -231,6 +232,7 @@ export interface PartyWithDetails extends Party {
   members: Array<{
     id: string;
     user_id: string;
+    ready: boolean;
     joined_at: string;
     profiles: Pick<Profile, "id" | "callsign" | "sc_handle" | "primary_ship">;
   }>;

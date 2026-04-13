@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/utils/supabase/client";
 import {
   addTeamMember,
   updateMemberRole,
@@ -34,6 +35,32 @@ export default function TeamRoster({
   const [success, setSuccess] = useState<string | null>(null);
   const [editingShip, setEditingShip] = useState<string | null>(null);
   const [shipValue, setShipValue] = useState("");
+  const channelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
+
+  // ── Real-time: broadcast roster changes to other viewers ──
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`team-roster:${teamId}`, { config: { broadcast: { self: false } } })
+      .on("broadcast", { event: "roster_change" }, () => {
+        router.refresh();
+      })
+      .subscribe();
+
+    channelRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+      channelRef.current = null;
+    };
+  }, [teamId, router]);
+
+  function broadcastRosterChange() {
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "roster_change",
+      payload: { sender: currentUserId },
+    });
+  }
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -49,6 +76,7 @@ export default function TeamRoster({
     } else {
       setSuccess(`${callsign.toUpperCase()} ADDED AS ${ROLE_LABELS[inviteRole]}`);
       setCallsign("");
+      broadcastRosterChange();
       router.refresh();
     }
   }
@@ -58,6 +86,7 @@ export default function TeamRoster({
     if (result.error) {
       setError(result.error);
     } else {
+      broadcastRosterChange();
       router.refresh();
     }
   }
@@ -68,6 +97,7 @@ export default function TeamRoster({
       setError(result.error);
     } else {
       setEditingShip(null);
+      broadcastRosterChange();
       router.refresh();
     }
   }
@@ -83,6 +113,7 @@ export default function TeamRoster({
     if (result.error) {
       setError(result.error);
     } else {
+      broadcastRosterChange();
       router.refresh();
     }
   }

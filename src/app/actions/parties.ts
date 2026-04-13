@@ -80,7 +80,7 @@ export async function searchParties(filters?: {
     .select(`
       *,
       creator:creator_id(id, callsign, sc_handle, primary_ship),
-      members:party_members(id, user_id, joined_at, profiles:user_id(id, callsign, sc_handle, primary_ship))
+      members:party_members(id, user_id, ready, joined_at, profiles:user_id(id, callsign, sc_handle, primary_ship))
     `)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -127,7 +127,7 @@ export async function getParty(partyId: string): Promise<PartyWithDetails | null
     .select(`
       *,
       creator:creator_id(id, callsign, sc_handle, primary_ship),
-      members:party_members(id, user_id, joined_at, profiles:user_id(id, callsign, sc_handle, primary_ship))
+      members:party_members(id, user_id, ready, joined_at, profiles:user_id(id, callsign, sc_handle, primary_ship))
     `)
     .eq("id", partyId)
     .single();
@@ -159,7 +159,7 @@ export async function getMyParties(): Promise<PartyWithDetails[]> {
     .select(`
       *,
       creator:creator_id(id, callsign, sc_handle, primary_ship),
-      members:party_members(id, user_id, joined_at, profiles:user_id(id, callsign, sc_handle, primary_ship))
+      members:party_members(id, user_id, ready, joined_at, profiles:user_id(id, callsign, sc_handle, primary_ship))
     `)
     .in("id", partyIds)
     .order("created_at", { ascending: false });
@@ -408,7 +408,30 @@ export async function sendPartyMessage(
   return {};
 }
 
-// ─── Party Chat — Get Messages ─────────────────────────────────────────────
+// ─── Toggle Ready Status ───────────────────────────────────────────────────
+
+export async function toggleReady(partyId: string): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "AUTHENTICATION REQUIRED." };
+
+  const { data: membership } = await supabase
+    .from("party_members")
+    .select("id, ready")
+    .eq("party_id", partyId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!membership) return { error: "NOT A MEMBER OF THIS PARTY." };
+
+  const { error } = await supabase
+    .from("party_members")
+    .update({ ready: !membership.ready })
+    .eq("id", membership.id);
+
+  if (error) return { error: "FAILED TO UPDATE READY STATUS." };
+  return {};
+}
 
 // ─── Auto-Expire Stale Parties ─────────────────────────────────────────────
 // Closes parties that have been open/in_progress for over 24 hours with no updates.

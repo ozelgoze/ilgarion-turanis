@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/client";
-import type { PartyMessageWithProfile } from "@/types/database";
+
+type PartyBroadcastEvent =
+  | { type: "party_message"; sender: string }
+  | { type: "party_update"; sender: string }
+  | { type: "members_change"; sender: string };
 
 interface UsePartyRealtimeParams {
   partyId: string;
@@ -11,14 +15,13 @@ interface UsePartyRealtimeParams {
   enabled?: boolean;
   onPartyChange?: () => void;
   onMembersChange?: () => void;
-  onNewMessage?: (msg: PartyMessageWithProfile) => void;
+  onNewMessage?: () => void;
 }
 
 /**
- * Subscribes to real-time changes on a party's tables:
- * - parties row changes (status updates)
- * - party_members inserts/deletes (join/leave/kick)
- * - party_messages inserts (chat)
+ * Subscribes to a broadcast channel for a party.
+ * Uses broadcast (not postgres_changes) to avoid RLS/WAL issues.
+ * Also keeps postgres_changes as fallback for party/member table changes.
  */
 export function usePartyRealtime({
   partyId,
@@ -42,43 +45,33 @@ export function usePartyRealtime({
 
     const supabase = createClient();
     const channel = supabase
-      .channel(`party:${partyId}`)
+      .channel(`party:${partyId}`, { config: { broadcast: { self: false } } })
+      // Primary: Broadcast events (reliable, not affected by RLS)
+      .on("broadcast", { event: "party_event" }, ({ payload }) => {
+        const evt = payload as PartyBroadcastEvent;
+        if (evt.sender === currentUserId) return; // skip own events
+        switch (evt.type) {
+          case "party_message":
+            onNewMessageRef.current?.();
+            break;
+          case "party_update":
+            onPartyChangeRef.current?.();
+            break;
+          case "members_change":
+            onMembersChangeRef.current?.();
+            break;
+        }
+      })
+      // Fallback: postgres_changes for party status (may work for some events)
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "parties",
-          filter: `id=eq.${partyId}`,
-        },
-        () => {
-          onPartyChangeRef.current?.();
-        }
+        { event: "*", schema: "public", table: "parties", filter: `id=eq.${partyId}` },
+        () => { onPartyChangeRef.current?.(); }
       )
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "party_members",
-          filter: `party_id=eq.${partyId}`,
-        },
-        () => {
-          onMembersChangeRef.current?.();
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "party_messages",
-          filter: `party_id=eq.${partyId}`,
-        },
-        (payload) => {
-          // postgres_changes won't include the joined profile, so we fetch it
-          onNewMessageRef.current?.(payload.new as PartyMessageWithProfile);
-        }
+        { event: "*", schema: "public", table: "party_members", filter: `party_id=eq.${partyId}` },
+        () => { onMembersChangeRef.current?.(); }
       )
       .subscribe();
 
@@ -89,4 +82,18 @@ export function usePartyRealtime({
       channelRef.current = null;
     };
   }, [partyId, currentUserId, enabled]);
+
+  /** Broadcast an event to all other clients on this party channel */
+  const broadcast = useCallback(
+    (event: PartyBroadcastEvent) => {
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "party_event",
+        payload: event,
+      });
+    },
+    []
+  );
+
+  return { broadcast };
 }
