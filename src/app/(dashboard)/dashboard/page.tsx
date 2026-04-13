@@ -2,14 +2,16 @@ import Link from "next/link";
 import { getMyTeams, getTeamMembers } from "@/app/actions/teams";
 import { getAllMyMaps } from "@/app/actions/maps";
 import { getAllMyBriefings } from "@/app/actions/briefings";
+import { getMyParties } from "@/app/actions/parties";
 import { ROLE_COLORS, ROLE_LABELS, type TeamWithRole, type ThreatLevel } from "@/types/database";
 import DashboardClient from "./dashboard-client";
 
 export default async function DashboardPage() {
-  const [teams, maps, briefings] = await Promise.all([
+  const [teams, maps, briefings, myParties] = await Promise.all([
     getMyTeams(),
     getAllMyMaps(),
     getAllMyBriefings(),
+    getMyParties(),
   ]);
 
   // Compute stats
@@ -56,6 +58,7 @@ export default async function DashboardPage() {
         recentMapActivity,
         fleetCount,
         maxThreat,
+        activeParties: myParties.filter((p) => p.status === "open" || p.status === "in_progress").length,
       }}
     />
   );

@@ -248,3 +248,29 @@ export interface PartyMessage {
 export interface PartyMessageWithProfile extends PartyMessage {
   profiles: Pick<Profile, "id" | "callsign">;
 }
+
+export type PartyNotificationType =
+  | "member_joined"
+  | "member_left"
+  | "member_kicked"
+  | "party_started"
+  | "party_closed";
+
+export const PARTY_NOTIFICATION_LABELS: Record<PartyNotificationType, { verb: string; color: string }> = {
+  member_joined: { verb: "joined", color: "#00ffcc" },
+  member_left: { verb: "left", color: "#F0A500" },
+  member_kicked: { verb: "was kicked from", color: "#FF2442" },
+  party_started: { verb: "started mission in", color: "#FF8C00" },
+  party_closed: { verb: "closed", color: "#666" },
+};
+
+export interface PartyNotification {
+  id: string;
+  user_id: string;
+  party_id: string;
+  type: PartyNotificationType;
+  actor_callsign: string;
+  party_title: string;
+  read: boolean;
+  created_at: string;
+}

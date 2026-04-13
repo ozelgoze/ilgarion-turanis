@@ -19,6 +19,7 @@ interface DashboardStats {
   recentMapActivity: string | null;
   fleetCount: number;
   maxThreat: ThreatLevel;
+  activeParties: number;
 }
 
 interface DashboardClientProps {
@@ -76,6 +77,7 @@ export default function DashboardClient({
         <StatCard label="BRIEFINGS" value={stats.briefingCount} accent="amber" />
         <StatCard label="OPERATIVES" value={stats.operativeCount} accent="accent" />
         <StatCard label="FLEET" value={stats.fleetCount} accent="amber" />
+        <StatCard label="PARTIES" value={stats.activeParties} accent="accent" />
         <ThreatStatCard maxThreat={stats.maxThreat} />
       </motion.div>
 

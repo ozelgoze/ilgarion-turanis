@@ -19,6 +19,7 @@ import {
   sendPartyMessage,
   getPartyMessages,
   getParty,
+  editParty,
 } from "@/app/actions/parties";
 import { usePartyRealtime } from "@/hooks/use-party-realtime";
 
@@ -45,6 +46,13 @@ export default function PartyDetailClient({
   const [msgInput, setMsgInput] = useState("");
   const [sending, setSending] = useState(false);
   const [kickingId, setKickingId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ label: string; action: () => void } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editMax, setEditMax] = useState(4);
+  const [editVoice, setEditVoice] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const activity = PARTY_ACTIVITIES[party.activity];
@@ -105,6 +113,45 @@ export default function PartyDetailClient({
     } else {
       await refreshParty();
     }
+  }
+
+  function handleCopyLink() {
+    const url = `${window.location.origin}/dashboard/parties/${party.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function openEdit() {
+    setEditTitle(party.title);
+    setEditDesc(party.description ?? "");
+    setEditMax(party.max_players);
+    setEditVoice(party.voice_chat ?? "");
+    setEditing(true);
+  }
+
+  async function handleEdit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    const result = await editParty(party.id, {
+      title: editTitle,
+      description: editDesc,
+      maxPlayers: editMax,
+      voiceChat: editVoice,
+    });
+    setLoading(false);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setEditing(false);
+      await refreshParty();
+    }
+  }
+
+  function confirmThen(label: string, action: () => void) {
+    setConfirmAction({ label, action });
   }
 
   async function handleSend(e: React.FormEvent) {
@@ -214,6 +261,99 @@ export default function PartyDetailClient({
         </div>
       )}
 
+      {/* Confirmation Dialog */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="mtc-panel bg-bg-surface p-6 max-w-sm w-full mx-4">
+            <p className="font-mono text-[11px] text-text-bright tracking-wide mb-4">
+              Are you sure you want to <span className="text-danger">{confirmAction.label}</span>?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="mtc-btn-ghost text-[10px]"
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={() => { confirmAction.action(); setConfirmAction(null); }}
+                className="mtc-btn-ghost text-danger border-danger/30 hover:bg-danger/10 text-[10px]"
+              >
+                CONFIRM
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Party Dialog */}
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="mtc-panel bg-bg-surface p-6 max-w-md w-full mx-4">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-1 h-5 bg-accent" />
+              <h2 className="font-mono text-xs tracking-[0.25em] text-text-dim uppercase">
+                Edit Party
+              </h2>
+            </div>
+            <form onSubmit={handleEdit} className="space-y-3">
+              <div className="space-y-1">
+                <label className="font-mono text-[9px] tracking-widest text-text-muted uppercase">Title</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={80}
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="mtc-input font-mono text-sm w-full"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="font-mono text-[9px] tracking-widest text-text-muted uppercase">Description</label>
+                <textarea
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  className="mtc-input font-mono text-[11px] w-full resize-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-mono text-[9px] tracking-widest text-text-muted uppercase">Max Players</label>
+                  <select
+                    value={editMax}
+                    onChange={(e) => setEditMax(Number(e.target.value))}
+                    className="mtc-input font-mono text-sm w-full"
+                  >
+                    {[2, 3, 4, 5, 6, 8, 10, 16, 32].map((n) => (
+                      <option key={n} value={n}>{n} players</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="font-mono text-[9px] tracking-widest text-text-muted uppercase">Voice Chat</label>
+                  <input
+                    type="text"
+                    value={editVoice}
+                    onChange={(e) => setEditVoice(e.target.value)}
+                    className="mtc-input font-mono text-[11px] w-full"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setEditing(false)} className="mtc-btn-ghost text-[10px]">
+                  CANCEL
+                </button>
+                <button type="submit" disabled={loading} className="mtc-btn-primary text-[10px]">
+                  {loading ? "SAVING..." : "SAVE CHANGES"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
         {!isMember && !isCreator && party.status === "open" && (
@@ -227,11 +367,11 @@ export default function PartyDetailClient({
         )}
         {isMember && !isCreator && (
           <button
-            onClick={() => handleAction(() => leaveParty(party.id), "/dashboard/parties")}
+            onClick={() => confirmThen("leave this party", () => handleAction(() => leaveParty(party.id), "/dashboard/parties"))}
             disabled={loading}
             className="mtc-btn-ghost text-danger border-danger/30 hover:bg-danger/10"
           >
-            {loading ? "LEAVING..." : "LEAVE PARTY"}
+            LEAVE PARTY
           </button>
         )}
         {isCreator && (
@@ -255,16 +395,27 @@ export default function PartyDetailClient({
               </button>
             )}
             {party.status !== "closed" && (
-              <button
-                onClick={() => handleAction(() => closeParty(party.id), "/dashboard/parties")}
-                disabled={loading}
-                className="mtc-btn-ghost text-danger border-danger/30 hover:bg-danger/10"
-              >
-                CLOSE PARTY
-              </button>
+              <>
+                <button onClick={openEdit} className="mtc-btn-ghost text-[10px]">
+                  EDIT
+                </button>
+                <button
+                  onClick={() => confirmThen("close this party", () => handleAction(() => closeParty(party.id), "/dashboard/parties"))}
+                  disabled={loading}
+                  className="mtc-btn-ghost text-danger border-danger/30 hover:bg-danger/10"
+                >
+                  CLOSE PARTY
+                </button>
+              </>
             )}
           </>
         )}
+
+        {/* Copy invite link */}
+        <button onClick={handleCopyLink} className="mtc-btn-ghost text-[10px]">
+          {copied ? "COPIED!" : "COPY LINK"}
+        </button>
+
         <Link href="/dashboard/parties" className="mtc-btn-ghost ml-auto">
           BACK TO PARTIES
         </Link>
@@ -319,7 +470,10 @@ export default function PartyDetailClient({
                       {/* Kick button */}
                       {isCreator && !isOwner && party.status !== "closed" && (
                         <button
-                          onClick={() => handleKick(member.user_id)}
+                          onClick={() => confirmThen(
+                            `kick ${profile?.callsign ?? "this member"}`,
+                            () => handleKick(member.user_id)
+                          )}
                           disabled={kickingId === member.user_id}
                           className="font-mono text-[8px] tracking-widest text-danger/60 hover:text-danger uppercase transition-colors px-1"
                         >

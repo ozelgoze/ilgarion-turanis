@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
-import { searchParties, getMyParties, expireStaleParties } from "@/app/actions/parties";
+import { searchParties, getMyParties, expireStaleParties, getMyPartyNotifications } from "@/app/actions/parties";
 import PartyHubClient from "./party-hub-client";
 
 export default async function PartiesPage() {
@@ -17,9 +17,10 @@ export default async function PartiesPage() {
   // Clean up stale parties on page load, then fetch
   await expireStaleParties();
 
-  const [openParties, myParties] = await Promise.all([
+  const [openParties, myParties, notifications] = await Promise.all([
     searchParties(),
     getMyParties(),
+    getMyPartyNotifications(),
   ]);
 
   return (
@@ -29,6 +30,7 @@ export default async function PartiesPage() {
       currentUserId={user.id}
       currentCallsign={profile?.callsign ?? "OPERATIVE"}
       currentScHandle={profile?.sc_handle ?? null}
+      notifications={notifications}
     />
   );
 }

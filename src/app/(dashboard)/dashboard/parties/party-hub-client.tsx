@@ -8,9 +8,11 @@ import {
   PARTY_ACTIVITIES,
   PARTY_STATUS_LABELS,
   type PartyActivity,
+  type PartyNotification,
   type PartyWithDetails,
 } from "@/types/database";
 import { createParty, searchParties, joinParty } from "@/app/actions/parties";
+import PartyNotifications from "@/components/party-notifications";
 
 interface PartyHubClientProps {
   openParties: PartyWithDetails[];
@@ -18,6 +20,7 @@ interface PartyHubClientProps {
   currentUserId: string;
   currentCallsign: string;
   currentScHandle: string | null;
+  notifications: PartyNotification[];
 }
 
 type Tab = "find" | "create" | "my";
@@ -36,6 +39,7 @@ export default function PartyHubClient({
   currentUserId,
   currentCallsign,
   currentScHandle,
+  notifications,
 }: PartyHubClientProps) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("find");
@@ -134,6 +138,7 @@ export default function PartyHubClient({
             {currentCallsign}{currentScHandle ? ` · RSI: ${currentScHandle}` : ""}
           </p>
         </div>
+        <PartyNotifications notifications={notifications} />
       </div>
 
       {/* Tab bar */}
