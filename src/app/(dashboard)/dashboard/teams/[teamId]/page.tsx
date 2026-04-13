@@ -121,10 +121,13 @@ export default async function TeamDetailPage({ params }: PageProps) {
           <p className="font-mono text-sm tracking-[0.2em] text-text-dim uppercase mb-1">
             No Maps Uploaded
           </p>
-          <p className="font-mono text-[10px] text-text-muted tracking-widest">
+          <p className="font-mono text-[10px] text-text-muted tracking-widest mb-2">
             {editable
               ? "Upload a map image to begin tactical planning."
               : "No maps have been created for this unit yet."}
+          </p>
+          <p className="font-mono text-[8px] text-text-muted/40 tracking-widest italic">
+            &ldquo;Every operation begins with a map. Every map begins with intel.&rdquo;
           </p>
         </div>
       ) : (
@@ -162,10 +165,13 @@ export default async function TeamDetailPage({ params }: PageProps) {
           <p className="font-mono text-sm tracking-[0.2em] text-text-dim uppercase mb-1">
             No Briefings
           </p>
-          <p className="font-mono text-[10px] text-text-muted tracking-widest">
+          <p className="font-mono text-[10px] text-text-muted tracking-widest mb-2">
             {editable
               ? "Create a briefing to share intel, embed documents, or record SITREPs."
               : "No briefings have been created for this unit yet."}
+          </p>
+          <p className="font-mono text-[8px] text-text-muted/40 tracking-widest italic">
+            &ldquo;A squad without a briefing is a squad without a mission.&rdquo;
           </p>
         </div>
       ) : (

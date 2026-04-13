@@ -198,6 +198,68 @@ const SYSTEMS: StarSystem[] = [
   },
 ];
 
+// ── QT Travel Time Estimates (seconds between major locations in Stanton) ──
+// Approximate values based on typical QT speeds (S-size drive)
+
+interface QTRoute {
+  from: string;
+  to: string;
+  /** Estimated seconds in quantum travel (S-size drive) */
+  seconds: number;
+}
+
+const STANTON_QT_ROUTES: QTRoute[] = [
+  // Inter-planet routes
+  { from: "Hurston", to: "Crusader", seconds: 390 },
+  { from: "Hurston", to: "ArcCorp", seconds: 480 },
+  { from: "Hurston", to: "microTech", seconds: 660 },
+  { from: "Crusader", to: "ArcCorp", seconds: 270 },
+  { from: "Crusader", to: "microTech", seconds: 420 },
+  { from: "ArcCorp", to: "microTech", seconds: 330 },
+  // Planet to city/station routes
+  { from: "Lorville", to: "Everus Harbor", seconds: 30 },
+  { from: "Orison", to: "Seraphim Station", seconds: 45 },
+  { from: "Area 18", to: "Bajini Point", seconds: 30 },
+  { from: "New Babbage", to: "Port Tressler", seconds: 30 },
+  // Popular cross-system routes
+  { from: "Lorville", to: "Area 18", seconds: 510 },
+  { from: "Lorville", to: "New Babbage", seconds: 690 },
+  { from: "Lorville", to: "Orison", seconds: 420 },
+  { from: "Area 18", to: "New Babbage", seconds: 360 },
+  { from: "Area 18", to: "Orison", seconds: 300 },
+  { from: "Orison", to: "New Babbage", seconds: 450 },
+  { from: "GrimHEX", to: "Orison", seconds: 60 },
+  { from: "GrimHEX", to: "Port Tressler", seconds: 435 },
+  // Jump point
+  { from: "microTech", to: "Stanton — Jump Point to Pyro", seconds: 180 },
+  { from: "Hurston", to: "Stanton — Jump Point to Pyro", seconds: 540 },
+];
+
+const QT_LOCATIONS = [
+  "Hurston", "Lorville", "Everus Harbor",
+  "Crusader", "Orison", "Seraphim Station", "GrimHEX",
+  "ArcCorp", "Area 18", "Bajini Point",
+  "microTech", "New Babbage", "Port Tressler",
+  "Stanton — Jump Point to Pyro",
+];
+
+function findQTTime(from: string, to: string): number | null {
+  if (from === to) return 0;
+  const route = STANTON_QT_ROUTES.find(
+    (r) => (r.from === from && r.to === to) || (r.from === to && r.to === from)
+  );
+  return route?.seconds ?? null;
+}
+
+function formatQTTime(seconds: number): string {
+  if (seconds === 0) return "0s";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m === 0) return `${s}s`;
+  if (s === 0) return `${m}m`;
+  return `${m}m ${s}s`;
+}
+
 const TYPE_ICONS: Record<Location["type"], { symbol: string; color: string }> = {
   planet: { symbol: "●", color: "#70B8E0" },
   moon: { symbol: "○", color: "#666" },
@@ -210,6 +272,9 @@ export default function StantonReference() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [activeSystem, setActiveSystem] = useState("stanton");
+  const [activeTab, setActiveTab] = useState<"map" | "qt">("map");
+  const [qtFrom, setQtFrom] = useState(QT_LOCATIONS[0]);
+  const [qtTo, setQtTo] = useState(QT_LOCATIONS[3]);
 
   const system = SYSTEMS.find((s) => s.id === activeSystem) ?? SYSTEMS[0];
   const totalLocations = system.data.reduce((a, b) => a + b.locations.length, 0);
@@ -286,6 +351,116 @@ export default function StantonReference() {
                 ))}
               </div>
 
+              {/* Mode Tabs: Map / QT Calculator */}
+              <div className="flex border-b border-border">
+                {([
+                  { id: "map" as const, label: "Locations" },
+                  { id: "qt" as const, label: "QT Calculator" },
+                ]).map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={[
+                      "flex-1 py-1.5 font-mono text-[9px] tracking-widest uppercase transition-colors",
+                      activeTab === tab.id
+                        ? "text-accent bg-accent/10"
+                        : "text-text-muted hover:text-text-dim",
+                    ].join(" ")}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* QT Calculator Tab */}
+              {activeTab === "qt" && (
+                <div className="px-4 py-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="font-mono text-[7px] tracking-widest text-text-muted uppercase">
+                        From
+                      </label>
+                      <select
+                        value={qtFrom}
+                        onChange={(e) => setQtFrom(e.target.value)}
+                        className="w-full bg-bg-elevated border border-border px-2 py-1.5 font-mono text-[9px] text-text-bright focus:border-accent/50 focus:outline-none"
+                      >
+                        {QT_LOCATIONS.map((loc) => (
+                          <option key={loc} value={loc} className="bg-bg-surface">{loc}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-mono text-[7px] tracking-widest text-text-muted uppercase">
+                        To
+                      </label>
+                      <select
+                        value={qtTo}
+                        onChange={(e) => setQtTo(e.target.value)}
+                        className="w-full bg-bg-elevated border border-border px-2 py-1.5 font-mono text-[9px] text-text-bright focus:border-accent/50 focus:outline-none"
+                      >
+                        {QT_LOCATIONS.map((loc) => (
+                          <option key={loc} value={loc} className="bg-bg-surface">{loc}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Result */}
+                  {(() => {
+                    const time = findQTTime(qtFrom, qtTo);
+                    return (
+                      <div className="border border-border bg-bg-elevated px-3 py-2 text-center">
+                        {time !== null ? (
+                          <>
+                            <div className="font-mono text-lg tracking-widest text-accent">
+                              {formatQTTime(time)}
+                            </div>
+                            <p className="font-mono text-[7px] tracking-widest text-text-muted uppercase mt-1">
+                              Estimated QT time (S-size drive)
+                            </p>
+                          </>
+                        ) : (
+                          <p className="font-mono text-[9px] tracking-widest text-text-muted/60 uppercase">
+                            No route data available for this pair
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Quick reference table */}
+                  <div>
+                    <p className="font-mono text-[7px] tracking-widest text-text-muted uppercase mb-1.5">
+                      Common Routes
+                    </p>
+                    <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                      {STANTON_QT_ROUTES.slice(0, 10).map((r, i) => (
+                        <button
+                          key={i}
+                          onClick={() => { setQtFrom(r.from); setQtTo(r.to); }}
+                          className="w-full flex items-center justify-between py-0.5 px-1 hover:bg-accent/5 transition-colors"
+                        >
+                          <span className="font-mono text-[8px] tracking-wide text-text-dim">
+                            {r.from} → {r.to}
+                          </span>
+                          <span className="font-mono text-[8px] tracking-widest text-accent">
+                            {formatQTTime(r.seconds)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <p className="font-mono text-[6px] tracking-widest text-text-muted/40 uppercase text-center">
+                    Times are approximate — varies by QT drive and ship mass
+                  </p>
+                </div>
+              )}
+
+              {/* Map Locations Tab */}
+              {activeTab === "map" && (
+              <>
               {/* System description */}
               <div className="px-4 py-2 border-b border-border">
                 <span className="font-mono text-[8px] tracking-widest uppercase" style={{ color: system.color }}>
@@ -383,6 +558,8 @@ export default function StantonReference() {
                   </AnimatePresence>
                 </div>
               ))}
+              </>
+              )}
             </div>
           </motion.div>
         )}

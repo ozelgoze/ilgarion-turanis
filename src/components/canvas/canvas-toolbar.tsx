@@ -5,6 +5,10 @@ import type { GridType } from "./tactical-canvas";
 import { DRAW_COLORS, DRAW_WIDTHS, type DrawTool } from "./drawing-helpers";
 import KeyboardShortcuts from "./keyboard-shortcuts";
 import ThreatIndicator from "./threat-indicator";
+import OpTimer from "./op-timer";
+import QuickComms from "./quick-comms";
+import MarkerFilter, { type MarkerFilters } from "./marker-filter";
+import OpPhaseTracker from "./op-phase-tracker";
 import type { ThreatLevel } from "@/types/database";
 
 interface CanvasToolbarProps {
@@ -38,6 +42,22 @@ interface CanvasToolbarProps {
   // ─── Threat level ──────────────────────────────────────────
   threatLevel?: ThreatLevel;
   onThreatLevelChange?: (level: ThreatLevel) => void;
+
+  // ─── Op timer ─────────────────────────────────────────────
+  opTimerTarget?: number | null;
+  onOpTimerBroadcast?: (targetTime: number | null) => void;
+
+  // ─── Quick comms ──────────────────────────────────────────
+  currentCallsign?: string;
+  onCalloutBroadcast?: (abbr: string, color: string) => void;
+
+  // ─── Marker filters ───────────────────────────────────────
+  markerFilters?: MarkerFilters;
+  onMarkerFiltersChange?: (filters: MarkerFilters) => void;
+
+  // ─── Op phase ─────────────────────────────────────────────
+  opPhase?: string;
+  onOpPhaseChange?: (phaseId: string) => void;
 }
 
 export default function CanvasToolbar({
@@ -63,6 +83,14 @@ export default function CanvasToolbar({
   onDeleteSelected,
   threatLevel = 0,
   onThreatLevelChange,
+  opTimerTarget,
+  onOpTimerBroadcast,
+  currentCallsign = "",
+  onCalloutBroadcast,
+  markerFilters,
+  onMarkerFiltersChange,
+  opPhase = "planning",
+  onOpPhaseChange,
 }: CanvasToolbarProps) {
   const [gridMenuOpen, setGridMenuOpen] = useState(false);
 
@@ -193,6 +221,17 @@ export default function CanvasToolbar({
         )}
       </div>
 
+      {/* ── Marker Filters ──────────────────────────────────── */}
+      {markerFilters && onMarkerFiltersChange && (
+        <>
+          <ToolbarDivider />
+          <MarkerFilter
+            filters={markerFilters}
+            onFiltersChange={onMarkerFiltersChange}
+          />
+        </>
+      )}
+
       {/* ── Drawing Controls (editors only) ─────────────────── */}
       {canEdit && (
         <>
@@ -317,11 +356,28 @@ export default function CanvasToolbar({
 
       {/* ── Right-side action buttons ────────────────────── */}
       <div className="ml-auto flex items-center gap-1">
+        {/* Op Phase */}
+        <OpPhaseTracker
+          currentPhase={opPhase}
+          canEdit={canEdit}
+          onPhaseChange={onOpPhaseChange}
+        />
+
+        <ToolbarDivider />
+
         {/* Threat Condition */}
         <ThreatIndicator
           level={threatLevel as ThreatLevel}
           canEdit={canEdit}
           onChange={onThreatLevelChange ?? (() => {})}
+        />
+
+        <ToolbarDivider />
+
+        {/* Op Timer */}
+        <OpTimer
+          onBroadcastTimer={onOpTimerBroadcast}
+          externalTargetTime={opTimerTarget}
         />
 
         <ToolbarDivider />
@@ -347,6 +403,12 @@ export default function CanvasToolbar({
             SITREP
           </button>
         )}
+
+        {/* Quick Comms */}
+        <QuickComms
+          currentCallsign={currentCallsign}
+          onBroadcastCallout={onCalloutBroadcast}
+        />
 
         {/* Export */}
         {onExportPNG && (

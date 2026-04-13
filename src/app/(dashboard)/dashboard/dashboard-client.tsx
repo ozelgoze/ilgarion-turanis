@@ -53,6 +53,17 @@ export default function DashboardClient({
         </Link>
       </div>
 
+      {/* Quick Actions */}
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <Link
+          href="/dashboard/parties"
+          className="mtc-btn-ghost text-[10px] flex items-center gap-2 group"
+        >
+          <span className="w-1.5 h-1.5 bg-accent group-hover:animate-pulse" />
+          PARTY FINDER / LFG
+        </Link>
+      </div>
+
       {/* Quick Stats Bar */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
@@ -276,7 +287,17 @@ function TeamCard({ team }: { team: TeamWithRole }) {
   );
 }
 
+const SC_LORE_QUOTES = [
+  "The stars are not kind to the unprepared. — Admiral Ernst Bishop, UEE Navy",
+  "In the black, every second of coordination is a second of survival. — Hurston Security Training Manual",
+  "A fleet without a plan is just a collection of targets. — Crusader Industries Fleet Doctrine",
+  "The quantum drive changed warfare. The tactical map changed victory. — microTech Military Research Division",
+  "Know the system, know the routes, know the threats. Everything else is instinct. — Pyro Survival Guide",
+];
+
 function EmptyState() {
+  const quote = SC_LORE_QUOTES[Math.floor(Math.random() * SC_LORE_QUOTES.length)];
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.98 }}
@@ -290,50 +311,29 @@ function EmptyState() {
           height="48"
           viewBox="0 0 48 48"
           fill="none"
-          className="text-text-muted opacity-40"
+          className="text-accent opacity-20"
         >
-          <rect
-            x="4"
-            y="4"
-            width="40"
-            height="40"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          />
-          <line
-            x1="4"
-            y1="24"
-            x2="44"
-            y2="24"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          />
-          <line
-            x1="24"
-            y1="4"
-            x2="24"
-            y2="44"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          />
-          <circle
-            cx="24"
-            cy="24"
-            r="6"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          />
+          <rect x="4" y="4" width="40" height="40" stroke="currentColor" strokeWidth="1.5" />
+          <line x1="4" y1="24" x2="44" y2="24" stroke="currentColor" strokeWidth="1" strokeDasharray="3 3" />
+          <line x1="24" y1="4" x2="24" y2="44" stroke="currentColor" strokeWidth="1" strokeDasharray="3 3" />
+          <circle cx="24" cy="24" r="6" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="24" cy="24" r="14" stroke="currentColor" strokeWidth="0.5" strokeDasharray="2 4" />
         </svg>
       </div>
       <p className="font-mono text-sm tracking-[0.2em] text-text-dim uppercase mb-2">
         No Units Registered
       </p>
-      <p className="font-mono text-[11px] text-text-muted tracking-widest mb-6">
-        Create a unit to begin tactical operations.
+      <p className="font-mono text-[11px] text-text-muted tracking-widest mb-4">
+        Register your first unit to begin tactical operations across the Stanton system.
       </p>
-      <Link href="/dashboard/teams/new" className="mtc-btn-primary text-sm">
+      <Link href="/dashboard/teams/new" className="mtc-btn-primary text-sm mb-6 inline-block">
         + REGISTER FIRST UNIT
       </Link>
+      <div className="border-t border-border/50 pt-4 mt-2">
+        <p className="font-mono text-[9px] text-text-muted/50 tracking-widest italic leading-relaxed max-w-md mx-auto">
+          &ldquo;{quote}&rdquo;
+        </p>
+      </div>
     </motion.div>
   );
 }

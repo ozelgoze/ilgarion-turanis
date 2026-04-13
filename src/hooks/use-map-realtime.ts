@@ -22,7 +22,10 @@ export type MapBroadcastEvent =
   | { type: "marker_delete"; id: string; sender: string }
   | { type: "drawing_insert"; drawing: MapDrawing; sender: string }
   | { type: "drawing_delete"; id: string; sender: string }
-  | { type: "threat_level_change"; threatLevel: ThreatLevel; sender: string };
+  | { type: "threat_level_change"; threatLevel: ThreatLevel; sender: string }
+  | { type: "op_timer"; targetTime: number | null; sender: string }
+  | { type: "quick_comms"; callsign: string; abbr: string; color: string; sender: string }
+  | { type: "op_phase_change"; phaseId: string; sender: string };
 
 interface UseMapRealtimeParams {
   mapId: string;
@@ -32,6 +35,8 @@ interface UseMapRealtimeParams {
   enabled?: boolean;
   onPresenceChange?: (users: PresenceUser[]) => void;
   onThreatLevelChange?: (level: ThreatLevel) => void;
+  onOpTimer?: (targetTime: number | null) => void;
+  onOpPhaseChange?: (phaseId: string) => void;
 }
 
 interface UseMapRealtimeReturn {
@@ -60,6 +65,8 @@ export function useMapRealtime({
   enabled = true,
   onPresenceChange,
   onThreatLevelChange,
+  onOpTimer,
+  onOpPhaseChange,
 }: UseMapRealtimeParams): UseMapRealtimeReturn {
   // Keep the presence callback in a ref so effect doesn't re-run on change
   const presenceCbRef = useRef(onPresenceChange);
@@ -71,6 +78,16 @@ export function useMapRealtime({
   useEffect(() => {
     threatCbRef.current = onThreatLevelChange;
   }, [onThreatLevelChange]);
+
+  const opTimerCbRef = useRef(onOpTimer);
+  useEffect(() => {
+    opTimerCbRef.current = onOpTimer;
+  }, [onOpTimer]);
+
+  const opPhaseCbRef = useRef(onOpPhaseChange);
+  useEffect(() => {
+    opPhaseCbRef.current = onOpPhaseChange;
+  }, [onOpPhaseChange]);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
 
@@ -97,6 +114,22 @@ export function useMapRealtime({
       // Handle non-canvas events first
       if (data.type === "threat_level_change") {
         threatCbRef.current?.(data.threatLevel);
+        return;
+      }
+      if (data.type === "op_timer") {
+        opTimerCbRef.current?.(data.targetTime);
+        return;
+      }
+      if (data.type === "op_phase_change") {
+        opPhaseCbRef.current?.(data.phaseId);
+        return;
+      }
+      if (data.type === "quick_comms") {
+        // Invoke the global toast function from QuickComms
+        const addToast = (window as unknown as Record<string, unknown>).__quickCommsAddToast as
+          | ((callsign: string, abbr: string, color: string) => void)
+          | undefined;
+        addToast?.(data.callsign, data.abbr, data.color);
         return;
       }
 

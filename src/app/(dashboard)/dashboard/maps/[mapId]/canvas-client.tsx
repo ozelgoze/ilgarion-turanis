@@ -4,6 +4,8 @@ import { useRef, useState, useCallback } from "react";
 import TacticalCanvas from "@/components/canvas/tactical-canvas";
 import IconPalette from "@/components/canvas/icon-palette";
 import SitrepPanel from "@/components/canvas/sitrep-panel";
+import QuickComms from "@/components/canvas/quick-comms";
+import FleetSummary from "@/components/canvas/fleet-summary";
 import MarkerContextMenu from "@/components/canvas/marker-context-menu";
 import type {
   GridType,
@@ -33,6 +35,7 @@ import {
 } from "@/app/actions/drawings";
 import { updateMapThreatLevel } from "@/app/actions/maps";
 import { useMapRealtime, type PresenceUser } from "@/hooks/use-map-realtime";
+import { createDefaultFilters, type MarkerFilters } from "@/components/canvas/marker-filter";
 
 interface CanvasClientProps {
   mapId: string;
@@ -70,6 +73,9 @@ export default function CanvasClient({
   const [sitrepOpen, setSitrepOpen] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<MarkerContextMenuData | null>(null);
   const [threatLevel, setThreatLevel] = useState<ThreatLevel>(initialThreatLevel);
+  const [opTimerTarget, setOpTimerTarget] = useState<number | null>(null);
+  const [markerFilters, setMarkerFilters] = useState<MarkerFilters>(createDefaultFilters);
+  const [opPhase, setOpPhase] = useState("planning");
 
   // ── Subscribe to realtime marker + drawing changes + presence ──────────
   const { broadcast } = useMapRealtime({
@@ -79,6 +85,8 @@ export default function CanvasClient({
     currentCallsign,
     onPresenceChange: setPresence,
     onThreatLevelChange: setThreatLevel,
+    onOpTimer: setOpTimerTarget,
+    onOpPhaseChange: setOpPhase,
   });
 
   // ── Build a lookup map: userId → callsign ─────────────────────────────
@@ -228,6 +236,37 @@ export default function CanvasClient({
     });
   }
 
+  // ── Op timer broadcast ───────────────────────────────────────────────────
+  function handleOpTimerBroadcast(targetTime: number | null) {
+    setOpTimerTarget(targetTime);
+    broadcast({
+      type: "op_timer",
+      targetTime,
+      sender: currentUserId,
+    });
+  }
+
+  // ── Op phase change ──────────────────────────────────────────────────────
+  function handleOpPhaseChange(phaseId: string) {
+    setOpPhase(phaseId);
+    broadcast({
+      type: "op_phase_change",
+      phaseId,
+      sender: currentUserId,
+    });
+  }
+
+  // ── Quick comms broadcast ────────────────────────────────────────────────
+  function handleCalloutBroadcast(abbr: string, color: string) {
+    broadcast({
+      type: "quick_comms",
+      callsign: currentCallsign,
+      abbr,
+      color,
+      sender: currentUserId,
+    });
+  }
+
   // ── Other viewers (exclude self) ─────────────────────────────────────────
   const others = presence.filter((u) => u.user_id !== currentUserId);
 
@@ -257,7 +296,18 @@ export default function CanvasClient({
         sitrepOpen={sitrepOpen}
         threatLevel={threatLevel}
         onThreatLevelChange={handleThreatLevelChange}
+        opTimerTarget={opTimerTarget}
+        onOpTimerBroadcast={handleOpTimerBroadcast}
+        currentCallsign={currentCallsign}
+        onCalloutBroadcast={handleCalloutBroadcast}
+        markerFilters={markerFilters}
+        onMarkerFiltersChange={setMarkerFilters}
+        opPhase={opPhase}
+        onOpPhaseChange={handleOpPhaseChange}
       />
+
+      {/* ── Fleet Summary Overlay (top left) ────────── */}
+      <FleetSummary teamMembers={teamMembers} />
 
       {/* ── Presence Overlay (center bottom) ──────── */}
       <div className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 pointer-events-none">

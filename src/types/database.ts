@@ -161,3 +161,90 @@ export function canEdit(role: TeamRole): boolean {
 export function isCommander(role: TeamRole): boolean {
   return role === "commander";
 }
+
+// ─── Party / LFG System ────────────────────────────────────
+
+export type PartyActivity =
+  | "bounty_hunting"
+  | "cargo_run"
+  | "mining"
+  | "salvage"
+  | "fps_mission"
+  | "fleet_battle"
+  | "racing"
+  | "exploration"
+  | "blueprint_run"
+  | "escort"
+  | "medical_rescue"
+  | "piracy"
+  | "other";
+
+export type PartyStatus = "open" | "full" | "closed" | "in_progress";
+
+export const PARTY_ACTIVITIES: Record<PartyActivity, { label: string; icon: string; color: string; description: string }> = {
+  bounty_hunting: { label: "Bounty Hunting", icon: "crosshair", color: "#FF2442", description: "Track and eliminate targets for aUEC" },
+  cargo_run: { label: "Cargo Run", icon: "package", color: "#F0A500", description: "Trade goods between locations" },
+  mining: { label: "Mining", icon: "pickaxe", color: "#C4724B", description: "Extract minerals and gems" },
+  salvage: { label: "Salvage", icon: "wrench", color: "#D2691E", description: "Recover materials from wrecks" },
+  fps_mission: { label: "FPS Mission", icon: "target", color: "#FF6B35", description: "Ground combat bunker missions" },
+  fleet_battle: { label: "Fleet Battle", icon: "zap", color: "#FF2442", description: "Large-scale PvP fleet engagement" },
+  racing: { label: "Racing", icon: "gauge", color: "#9B7FE8", description: "Ship or ground vehicle racing" },
+  exploration: { label: "Exploration", icon: "compass", color: "#70B8E0", description: "Scout unknown areas and find POIs" },
+  blueprint_run: { label: "Blueprint Run", icon: "file", color: "#00ffcc", description: "Collect blueprints from bunkers" },
+  escort: { label: "Escort / Security", icon: "shield", color: "#5B9BD5", description: "Protect cargo haulers or players" },
+  medical_rescue: { label: "Medical Rescue", icon: "heart", color: "#FF8C00", description: "Search and rescue operations" },
+  piracy: { label: "Piracy", icon: "skull", color: "#FF2442", description: "Raid and plunder (outlaw gameplay)" },
+  other: { label: "Other", icon: "star", color: "#666", description: "Custom activity" },
+};
+
+export const PARTY_STATUS_LABELS: Record<PartyStatus, { label: string; color: string }> = {
+  open: { label: "OPEN", color: "#00ffcc" },
+  full: { label: "FULL", color: "#F0A500" },
+  closed: { label: "CLOSED", color: "#666" },
+  in_progress: { label: "IN PROGRESS", color: "#FF8C00" },
+};
+
+export interface Party {
+  id: string;
+  creator_id: string;
+  activity: PartyActivity;
+  title: string;
+  description: string | null;
+  min_players: number;
+  max_players: number;
+  status: PartyStatus;
+  region: string | null;
+  voice_chat: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PartyMember {
+  id: string;
+  party_id: string;
+  user_id: string;
+  joined_at: string;
+}
+
+export interface PartyWithDetails extends Party {
+  creator: Pick<Profile, "id" | "callsign" | "sc_handle" | "primary_ship">;
+  members: Array<{
+    id: string;
+    user_id: string;
+    joined_at: string;
+    profiles: Pick<Profile, "id" | "callsign" | "sc_handle" | "primary_ship">;
+  }>;
+  member_count: number;
+}
+
+export interface PartyMessage {
+  id: string;
+  party_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+}
+
+export interface PartyMessageWithProfile extends PartyMessage {
+  profiles: Pick<Profile, "id" | "callsign">;
+}

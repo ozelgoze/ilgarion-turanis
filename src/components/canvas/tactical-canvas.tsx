@@ -101,6 +101,18 @@ interface TacticalCanvasProps {
   // ─── Threat level ─────────────────────────────────
   threatLevel?: import("@/types/database").ThreatLevel;
   onThreatLevelChange?: (level: import("@/types/database").ThreatLevel) => void;
+  // ─── Op timer ─────────────────────────────────────
+  opTimerTarget?: number | null;
+  onOpTimerBroadcast?: (targetTime: number | null) => void;
+  // ─── Quick comms ──────────────────────────────────
+  currentCallsign?: string;
+  onCalloutBroadcast?: (abbr: string, color: string) => void;
+  // ─── Marker filters ──────────────────────────────
+  markerFilters?: import("./marker-filter").MarkerFilters;
+  onMarkerFiltersChange?: (filters: import("./marker-filter").MarkerFilters) => void;
+  // ─── Op phase ─────────────────────────────────────
+  opPhase?: string;
+  onOpPhaseChange?: (phaseId: string) => void;
 }
 
 const GRID_COLOR = "rgba(0, 255, 204, 0.12)";
@@ -242,6 +254,14 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       sitrepOpen = false,
       threatLevel = 0,
       onThreatLevelChange,
+      opTimerTarget,
+      onOpTimerBroadcast,
+      currentCallsign = "",
+      onCalloutBroadcast,
+      markerFilters,
+      onMarkerFiltersChange,
+      opPhase = "planning",
+      onOpPhaseChange,
     },
     ref
   ) {
@@ -408,6 +428,10 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             });
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (img as any).__markerId = marker.id;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerType = marker.marker_type;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerAffiliation = marker.affiliation;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (img as any).__markerLabel = marker.label ?? "";
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1246,6 +1270,10 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (img as any).__markerId = m.id;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerType = m.marker_type;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (img as any).__markerAffiliation = m.affiliation;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (img as any).__markerLabel = m.label ?? "";
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (img as any).__markerAssignedTo = m.assigned_to ?? null;
@@ -1368,6 +1396,33 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
       return () => { active = false; };
     }, [gridType, gridSize, imageLoaded]);
 
+    // ─── Marker filter visibility ───────────────────────────────────────────
+
+    useEffect(() => {
+      const c = fabricRef.current;
+      if (!c || !markerFilters) return;
+      const objs = c.getObjects();
+      for (const obj of objs) {
+        const id = getMarkerId(obj);
+        const labelFor = getMarkerLabelFor(obj);
+        if (id) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const mType = (obj as any).__markerType as string | undefined;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const mAffil = (obj as any).__markerAffiliation as string | undefined;
+          const visible =
+            (!mType || markerFilters.types.has(mType as import("@/types/database").MarkerType)) &&
+            (!mAffil || markerFilters.affiliations.has(mAffil as import("@/types/database").MarkerAffiliation));
+          obj.visible = visible;
+        } else if (labelFor) {
+          // Match label visibility to its parent marker
+          const parent = objs.find((o) => getMarkerId(o) === labelFor);
+          if (parent) obj.visible = parent.visible ?? true;
+        }
+      }
+      c.requestRenderAll();
+    }, [markerFilters]);
+
     // ─── Drag-and-drop handlers ───────────────────────────────────────────
 
     const handleDragOver = useCallback(
@@ -1430,6 +1485,10 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           });
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (img as any).__markerId = ""; // pending DB confirmation
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (img as any).__markerType = type;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (img as any).__markerAffiliation = affiliation;
           c.add(img);
           c.setActiveObject(img);
           c.requestRenderAll();
@@ -1491,6 +1550,14 @@ const TacticalCanvas = forwardRef<TacticalCanvasRef, TacticalCanvasProps>(
           sitrepOpen={sitrepOpen}
           threatLevel={threatLevel}
           onThreatLevelChange={onThreatLevelChange}
+          opTimerTarget={opTimerTarget}
+          onOpTimerBroadcast={onOpTimerBroadcast}
+          currentCallsign={currentCallsign}
+          onCalloutBroadcast={onCalloutBroadcast}
+          markerFilters={markerFilters}
+          onMarkerFiltersChange={onMarkerFiltersChange}
+          opPhase={opPhase}
+          onOpPhaseChange={onOpPhaseChange}
           onDeselect={() => {
             const c = fabricRef.current;
             if (!c) return;
