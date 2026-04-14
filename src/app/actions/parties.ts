@@ -43,6 +43,7 @@ export async function createParty(fields: {
   region?: string;
   voiceChat?: string;
   passcode?: string;
+  startingStation?: string;
 }): Promise<{ party?: { id: string }; error?: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -69,6 +70,7 @@ export async function createParty(fields: {
       region: fields.region?.trim() || "any",
       voice_chat: fields.voiceChat?.trim() || null,
       passcode,
+      starting_station: fields.startingStation?.trim() || null,
     })
     .select("id")
     .single();
@@ -850,12 +852,12 @@ export async function getPartyEvents(partyId: string, limit = 50): Promise<Party
   return data as PartyEvent[];
 }
 
-// ─── Invite to Party by Callsign (Creator Only) ──────────────────────────
+// ─── Invite to Party by Callsign or RSI Handle (Creator Only) ────────────
 
 export async function inviteToParty(
   partyId: string,
-  callsign: string
-): Promise<{ error?: string }> {
+  searchTerm: string
+): Promise<{ error?: string; invitedUserId?: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "AUTHENTICATION REQUIRED." };
@@ -871,14 +873,29 @@ export async function inviteToParty(
   if (party.creator_id !== user.id) return { error: "ONLY THE PARTY LEADER CAN INVITE." };
   if (party.status !== "open") return { error: "PARTY IS NOT ACCEPTING NEW MEMBERS." };
 
-  // Find user by callsign
-  const { data: target } = await supabase
+  const term = searchTerm.trim();
+
+  // Try callsign first, then RSI handle
+  let target: { id: string; callsign: string } | null = null;
+
+  const { data: byCallsign } = await supabase
     .from("profiles")
     .select("id, callsign")
-    .ilike("callsign", callsign.trim())
+    .ilike("callsign", term)
     .single();
 
-  if (!target) return { error: `NO PLAYER FOUND WITH CALLSIGN "${callsign.toUpperCase()}".` };
+  if (byCallsign) {
+    target = byCallsign;
+  } else {
+    const { data: byHandle } = await supabase
+      .from("profiles")
+      .select("id, callsign")
+      .ilike("sc_handle", term)
+      .single();
+    target = byHandle;
+  }
+
+  if (!target) return { error: `NO PLAYER FOUND WITH CALLSIGN OR RSI HANDLE "${term.toUpperCase()}".` };
   if (target.id === user.id) return { error: "CANNOT INVITE YOURSELF." };
 
   // Check not already a member
@@ -924,12 +941,12 @@ export async function inviteToParty(
   await supabase.from("party_notifications").insert({
     user_id: target.id,
     party_id: partyId,
-    type: "member_joined",
+    type: "party_invite",
     actor_callsign: leaderCallsign,
     party_title: party.title,
   });
 
   await logPartyEvent(partyId, user.id, "invite", `${leaderCallsign} invited ${target.callsign}`);
 
-  return {};
+  return { invitedUserId: target.id };
 }

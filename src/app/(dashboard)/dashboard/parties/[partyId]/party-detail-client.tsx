@@ -9,6 +9,7 @@ import {
   PARTY_ACTIVITIES,
   PARTY_STATUS_LABELS,
   PARTY_OUTCOMES,
+  SC_LOCATIONS,
   type PartyWithDetails,
   type PartyMessageWithProfile,
   type PartyEvent,
@@ -280,6 +281,9 @@ export default function PartyDetailClient({
       setInviteCallsign("");
       broadcast({ type: "members_change", sender: currentUserId });
       broadcastHubChange();
+      if (result.invitedUserId) {
+        broadcastNotification([result.invitedUserId]);
+      }
       await refreshParty();
       await refreshEvents();
     }
@@ -433,6 +437,24 @@ export default function PartyDetailClient({
               )}
             </div>
           )}
+          {party.starting_station && (() => {
+            const station = getStationInfo(party.starting_station);
+            if (!station) return null;
+            return (
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-[9px] text-text-muted tracking-widest uppercase">Station:</span>
+                <span
+                  className="font-mono text-[11px] tracking-wider uppercase"
+                  style={{ color: station.color }}
+                >
+                  {station.label}
+                </span>
+                <span className="font-mono text-[8px] tracking-widest uppercase" style={{ color: `${station.color}80` }}>
+                  [{station.system}]
+                </span>
+              </div>
+            );
+          })()}
           {party.passcode && (isMember || isCreator) && (
             <div className="flex items-center gap-1.5">
               <span className="font-mono text-[8px] text-text-muted/60 tracking-widest uppercase border border-border/50 px-1.5 py-0.5">
@@ -1047,7 +1069,7 @@ export default function PartyDetailClient({
             <div className="flex items-center gap-2 mb-3">
               <div className="w-1 h-4 bg-accent" />
               <h3 className="font-mono text-[10px] tracking-[0.25em] text-text-dim uppercase">
-                Invite by Callsign
+                Invite Player
               </h3>
             </div>
             <form onSubmit={handleInvite} className="flex items-end gap-2">
@@ -1057,7 +1079,7 @@ export default function PartyDetailClient({
                   required
                   value={inviteCallsign}
                   onChange={(e) => { setInviteCallsign(e.target.value); setInviteMsg(null); }}
-                  placeholder="e.g. SHADOW-7"
+                  placeholder="Callsign or RSI handle..."
                   className="mtc-input font-mono text-[11px] w-full uppercase"
                   disabled={inviting}
                 />
@@ -1119,6 +1141,14 @@ export default function PartyDetailClient({
       </div>
     </PageTransition>
   );
+}
+
+function getStationInfo(value: string): { label: string; system: string; color: string } | null {
+  for (const group of SC_LOCATIONS) {
+    const loc = group.locations.find((l) => l.value === value);
+    if (loc) return { label: loc.label, system: group.system, color: group.color };
+  }
+  return null;
 }
 
 function getTimeAgo(dateStr: string): string {

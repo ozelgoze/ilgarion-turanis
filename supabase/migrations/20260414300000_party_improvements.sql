@@ -17,6 +17,9 @@ END $$;
 
 ALTER TABLE public.parties ADD COLUMN IF NOT EXISTS outcome public.party_outcome DEFAULT NULL;
 
+-- Starting station / location (null = not specified)
+ALTER TABLE public.parties ADD COLUMN IF NOT EXISTS starting_station text DEFAULT NULL;
+
 -- ── Party activity log ────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.party_events (

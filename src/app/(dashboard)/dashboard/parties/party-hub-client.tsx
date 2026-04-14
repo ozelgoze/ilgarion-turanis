@@ -8,6 +8,7 @@ import PageTransition from "@/components/page-transition";
 import {
   PARTY_ACTIVITIES,
   PARTY_STATUS_LABELS,
+  SC_LOCATIONS,
   type PartyActivity,
   type PartyNotification,
   type PartyWithDetails,
@@ -88,6 +89,7 @@ export default function PartyHubClient({
   const [createVoice, setCreateVoice] = useState("");
   const [createRegion, setCreateRegion] = useState("any");
   const [createPasscode, setCreatePasscode] = useState("");
+  const [createStation, setCreateStation] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -176,6 +178,7 @@ export default function PartyHubClient({
       voiceChat: createVoice,
       region: createRegion,
       passcode: createPasscode || undefined,
+      startingStation: createStation || undefined,
     });
 
     setCreating(false);
@@ -581,6 +584,29 @@ export default function PartyHubClient({
               </div>
             </div>
 
+            {/* Starting station */}
+            <div className="space-y-1">
+              <label className="font-mono text-[9px] tracking-widest text-text-muted uppercase">
+                Starting Station (optional)
+              </label>
+              <select
+                value={createStation}
+                onChange={(e) => setCreateStation(e.target.value)}
+                className="mtc-input font-mono text-[11px] w-full"
+              >
+                <option value="">Any / Not specified</option>
+                {SC_LOCATIONS.map((group) => (
+                  <optgroup key={group.system} label={`── ${group.system} ──`}>
+                    {group.locations.map((loc) => (
+                      <option key={loc.value} value={loc.value}>
+                        {loc.label} ({loc.type})
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+
             {/* Private party passcode */}
             <div className="space-y-1">
               <label className="font-mono text-[9px] tracking-widest text-text-muted uppercase">
@@ -740,6 +766,18 @@ function PartyCard({
             {party.region}
           </span>
         )}
+        {party.starting_station && (() => {
+          const station = getStationLabel(party.starting_station);
+          if (!station) return null;
+          return (
+            <span
+              className="font-mono text-[7px] tracking-widest uppercase border px-1 py-0.5"
+              style={{ color: station.color, borderColor: `${station.color}40` }}
+            >
+              {station.label}
+            </span>
+          );
+        })()}
       </div>
 
       {/* Leader reputation */}
@@ -797,6 +835,14 @@ function PartyCard({
       </div>
     </div>
   );
+}
+
+function getStationLabel(value: string): { label: string; system: string; color: string } | null {
+  for (const group of SC_LOCATIONS) {
+    const loc = group.locations.find((l) => l.value === value);
+    if (loc) return { label: loc.label, system: group.system, color: group.color };
+  }
+  return null;
 }
 
 function getTimeAgo(dateStr: string): string {

@@ -224,9 +224,81 @@ export interface Party {
   voice_chat: string | null;
   passcode: string | null;
   outcome: PartyOutcome | null;
+  starting_station: string | null;
   created_at: string;
   updated_at: string;
 }
+
+// ─── Star Citizen Locations ─────────────────────────────────────
+
+export interface StationGroup {
+  system: string;
+  color: string;
+  locations: { value: string; label: string; type: "city" | "station" | "outpost" }[];
+}
+
+export const SC_LOCATIONS: StationGroup[] = [
+  {
+    system: "Stanton",
+    color: "#00ffcc",
+    locations: [
+      // Stanton — Hurston
+      { value: "lorville", label: "Lorville", type: "city" },
+      { value: "everus-harbor", label: "Everus Harbor", type: "station" },
+      // Stanton — Crusader
+      { value: "orison", label: "Orison", type: "city" },
+      { value: "seraphim-station", label: "Seraphim Station", type: "station" },
+      { value: "grim-hex", label: "Grim HEX", type: "station" },
+      // Stanton — ArcCorp
+      { value: "area18", label: "Area 18", type: "city" },
+      { value: "baijini-point", label: "Baijini Point", type: "station" },
+      // Stanton — microTech
+      { value: "new-babbage", label: "New Babbage", type: "city" },
+      { value: "port-tressler", label: "Port Tressler", type: "station" },
+      // Stanton — Rest stops
+      { value: "hur-l1", label: "HUR-L1", type: "station" },
+      { value: "hur-l2", label: "HUR-L2", type: "station" },
+      { value: "hur-l3", label: "HUR-L3", type: "station" },
+      { value: "hur-l4", label: "HUR-L4", type: "station" },
+      { value: "hur-l5", label: "HUR-L5", type: "station" },
+      { value: "cru-l1", label: "CRU-L1", type: "station" },
+      { value: "cru-l4", label: "CRU-L4", type: "station" },
+      { value: "cru-l5", label: "CRU-L5", type: "station" },
+      { value: "arc-l1", label: "ARC-L1", type: "station" },
+      { value: "arc-l2", label: "ARC-L2", type: "station" },
+      { value: "arc-l3", label: "ARC-L3", type: "station" },
+      { value: "arc-l4", label: "ARC-L4", type: "station" },
+      { value: "arc-l5", label: "ARC-L5", type: "station" },
+      { value: "mic-l1", label: "MIC-L1", type: "station" },
+      { value: "mic-l2", label: "MIC-L2", type: "station" },
+      { value: "mic-l3", label: "MIC-L3", type: "station" },
+      { value: "mic-l4", label: "MIC-L4", type: "station" },
+      { value: "mic-l5", label: "MIC-L5", type: "station" },
+    ],
+  },
+  {
+    system: "Pyro",
+    color: "#FF6B35",
+    locations: [
+      { value: "pyro-gateway", label: "Pyro Gateway", type: "station" },
+      { value: "ruin-station", label: "Ruin Station", type: "station" },
+      { value: "checkmate-station", label: "Checkmate Station", type: "station" },
+      { value: "ignis", label: "Ignis", type: "outpost" },
+      { value: "terminus", label: "Terminus", type: "outpost" },
+      { value: "vuur", label: "Vuur", type: "outpost" },
+      { value: "fairo", label: "Fairo", type: "outpost" },
+      { value: "bloom", label: "Bloom", type: "outpost" },
+    ],
+  },
+  {
+    system: "Nyx",
+    color: "#9B7FE8",
+    locations: [
+      { value: "levski", label: "Levski", type: "city" },
+      { value: "nyx-gateway", label: "Nyx Gateway", type: "station" },
+    ],
+  },
+];
 
 export interface PartyEvent {
   id: string;
@@ -274,7 +346,8 @@ export type PartyNotificationType =
   | "member_left"
   | "member_kicked"
   | "party_started"
-  | "party_closed";
+  | "party_closed"
+  | "party_invite";
 
 export const PARTY_NOTIFICATION_LABELS: Record<PartyNotificationType, { verb: string; color: string }> = {
   member_joined: { verb: "joined", color: "#00ffcc" },
@@ -282,6 +355,7 @@ export const PARTY_NOTIFICATION_LABELS: Record<PartyNotificationType, { verb: st
   member_kicked: { verb: "was kicked from", color: "#FF2442" },
   party_started: { verb: "started mission in", color: "#FF8C00" },
   party_closed: { verb: "closed", color: "#666" },
+  party_invite: { verb: "invited you to", color: "#5B9BD5" },
 };
 
 export interface PartyNotification {
