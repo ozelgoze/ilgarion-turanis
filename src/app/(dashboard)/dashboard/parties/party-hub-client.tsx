@@ -87,12 +87,16 @@ export default function PartyHubClient({
   const [createMax, setCreateMax] = useState(4);
   const [createVoice, setCreateVoice] = useState("");
   const [createRegion, setCreateRegion] = useState("any");
+  const [createPasscode, setCreatePasscode] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
   // ── Join state ───────────────
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [passcodePrompt, setPasscodePrompt] = useState<{ partyId: string; creatorId: string } | null>(null);
+  const [passcodeInput, setPasscodeInput] = useState("");
+  const [searchHasSpots, setSearchHasSpots] = useState(false);
 
   // ── Real-time: listen for party list changes via broadcast ──
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
@@ -171,6 +175,7 @@ export default function PartyHubClient({
       maxPlayers: createMax,
       voiceChat: createVoice,
       region: createRegion,
+      passcode: createPasscode || undefined,
     });
 
     setCreating(false);
@@ -182,23 +187,42 @@ export default function PartyHubClient({
     }
   }
 
-  async function handleJoin(partyId: string) {
+  async function handleJoin(partyId: string, passcode?: string) {
+    // Check if party is private and we don't have a passcode yet
+    const targetParty = parties.find((p) => p.id === partyId);
+    if (targetParty?.passcode && !passcode) {
+      setPasscodePrompt({ partyId, creatorId: targetParty.creator_id });
+      setPasscodeInput("");
+      return;
+    }
+
     setJoiningId(partyId);
     setJoinError(null);
-    const result = await joinParty(partyId);
+    const result = await joinParty(partyId, passcode);
     setJoiningId(null);
     if (result.error) {
-      setJoinError(result.error);
+      if (result.error.includes("PASSCODE")) {
+        // Show passcode prompt
+        setPasscodePrompt({ partyId, creatorId: targetParty?.creator_id ?? "" });
+        setPasscodeInput("");
+        setJoinError(result.error);
+      } else {
+        setJoinError(result.error);
+      }
       setTimeout(() => setJoinError(null), 3000);
     } else {
+      setPasscodePrompt(null);
       broadcastListChange();
-      // Notify the party creator about the new join
-      const joinedParty = parties.find((p) => p.id === partyId);
-      if (joinedParty) {
-        broadcastNotification([joinedParty.creator_id]);
+      if (targetParty) {
+        broadcastNotification([targetParty.creator_id]);
       }
       router.push(`/dashboard/parties/${partyId}`);
     }
+  }
+
+  async function handlePasscodeJoin() {
+    if (!passcodePrompt) return;
+    await handleJoin(passcodePrompt.partyId, passcodeInput);
   }
 
   return (
@@ -259,6 +283,49 @@ export default function PartyHubClient({
       {joinError && (
         <div className="mb-4 border border-danger/30 bg-danger/5 px-4 py-2">
           <p className="font-mono text-[10px] text-danger tracking-widest">{joinError}</p>
+        </div>
+      )}
+
+      {/* Passcode prompt dialog */}
+      {passcodePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="mtc-panel bg-bg-surface p-6 max-w-xs w-full mx-4">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-1 h-5 bg-amber" />
+              <h2 className="font-mono text-xs tracking-[0.25em] text-text-dim uppercase">
+                Private Party
+              </h2>
+            </div>
+            <p className="font-mono text-[10px] text-text-muted tracking-widest mb-3">
+              This party requires a passcode to join.
+            </p>
+            <input
+              type="text"
+              value={passcodeInput}
+              onChange={(e) => setPasscodeInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handlePasscodeJoin(); }}
+              placeholder="Enter passcode..."
+              className="mtc-input font-mono text-sm w-full mb-4 uppercase"
+              autoFocus
+            />
+            {joinError && joinError.includes("PASSCODE") && (
+              <p className="font-mono text-[9px] text-danger tracking-widest mb-3">
+                {joinError}
+              </p>
+            )}
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setPasscodePrompt(null)} className="mtc-btn-ghost text-[10px]">
+                CANCEL
+              </button>
+              <button
+                onClick={handlePasscodeJoin}
+                disabled={!passcodeInput.trim() || joiningId !== null}
+                className="mtc-btn-primary text-[10px]"
+              >
+                {joiningId ? "..." : "JOIN"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -334,12 +401,24 @@ export default function PartyHubClient({
               >
                 {searching ? "SEARCHING..." : "SEARCH"}
               </button>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={searchHasSpots}
+                  onChange={(e) => setSearchHasSpots(e.target.checked)}
+                  className="accent-accent"
+                />
+                <span className="font-mono text-[9px] tracking-widest text-text-muted uppercase whitespace-nowrap">
+                  Has Spots
+                </span>
+              </label>
               <button
                 onClick={() => {
                   setSearchActivity("");
                   setSearchText("");
                   setSearchRegion("");
                   setSearchSort("newest");
+                  setSearchHasSpots(false);
                 }}
                 className="mtc-btn-ghost whitespace-nowrap text-[10px]"
               >
@@ -349,7 +428,11 @@ export default function PartyHubClient({
           </div>
 
           {/* Results */}
-          {parties.length === 0 ? (
+          {(() => {
+            const filtered = searchHasSpots
+              ? parties.filter((p) => (p.member_count ?? 0) < p.max_players)
+              : parties;
+            return filtered.length === 0 ? (
             <div className="mtc-panel bg-bg-surface p-10 text-center">
               <p className="font-mono text-sm tracking-[0.2em] text-text-dim uppercase mb-2">
                 No Parties Found
@@ -363,7 +446,7 @@ export default function PartyHubClient({
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {parties.map((party) => (
+              {filtered.map((party) => (
                 <PartyCard
                   key={party.id}
                   party={party}
@@ -374,7 +457,8 @@ export default function PartyHubClient({
                 />
               ))}
             </div>
-          )}
+          );
+          })()}
         </div>
       )}
 
@@ -497,6 +581,26 @@ export default function PartyHubClient({
               </div>
             </div>
 
+            {/* Private party passcode */}
+            <div className="space-y-1">
+              <label className="font-mono text-[9px] tracking-widest text-text-muted uppercase">
+                Passcode (optional — makes party private)
+              </label>
+              <input
+                type="text"
+                value={createPasscode}
+                onChange={(e) => setCreatePasscode(e.target.value)}
+                placeholder="Leave empty for public party"
+                maxLength={20}
+                className="mtc-input font-mono text-[11px] w-full uppercase"
+              />
+              {createPasscode && (
+                <p className="font-mono text-[8px] text-amber/70 tracking-widest">
+                  Players will need this passcode to join. Share it with your squad.
+                </p>
+              )}
+            </div>
+
             {createError && (
               <div className="border border-danger/30 bg-danger/5 px-3 py-2">
                 <p className="font-mono text-[10px] text-danger tracking-widest">{createError}</p>
@@ -508,7 +612,7 @@ export default function PartyHubClient({
               disabled={creating || !createTitle.trim()}
               className="mtc-btn-primary w-full"
             >
-              {creating ? "CREATING..." : "CREATE PARTY"}
+              {creating ? "CREATING..." : createPasscode ? "CREATE PRIVATE PARTY" : "CREATE PARTY"}
             </button>
           </form>
         </div>
@@ -603,7 +707,13 @@ function PartyCard({
 
       {/* Title */}
       <Link href={`/dashboard/parties/${party.id}`}>
-        <h3 className="font-mono font-bold text-text-bright text-sm tracking-wide mb-2 hover:text-accent transition-colors line-clamp-2 cursor-pointer">
+        <h3 className="font-mono font-bold text-text-bright text-sm tracking-wide mb-2 hover:text-accent transition-colors line-clamp-2 cursor-pointer flex items-center gap-1.5">
+          {party.passcode && (
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#F0A500" strokeWidth="2" strokeLinecap="square" className="shrink-0">
+              <rect x="3" y="11" width="18" height="11" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+          )}
           {party.title}
         </h3>
       </Link>

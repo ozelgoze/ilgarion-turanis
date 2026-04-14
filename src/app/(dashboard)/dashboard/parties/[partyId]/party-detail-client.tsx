@@ -8,8 +8,11 @@ import PageTransition from "@/components/page-transition";
 import {
   PARTY_ACTIVITIES,
   PARTY_STATUS_LABELS,
+  PARTY_OUTCOMES,
   type PartyWithDetails,
   type PartyMessageWithProfile,
+  type PartyEvent,
+  type PartyOutcome,
   type LeaderReputation,
 } from "@/types/database";
 import {
@@ -26,6 +29,8 @@ import {
   rateParty,
   getPendingRating,
   getLeaderReputation,
+  getPartyEvents,
+  inviteToParty,
 } from "@/app/actions/parties";
 import { usePartyRealtime } from "@/hooks/use-party-realtime";
 
@@ -67,6 +72,12 @@ export default function PartyDetailClient({
   const [ratingDone, setRatingDone] = useState(false);
   const [leaderRep, setLeaderRep] = useState<LeaderReputation | null>(null);
   const [countdown, setCountdown] = useState("");
+  const [events, setEvents] = useState<PartyEvent[]>([]);
+  const [showCloseDialog, setShowCloseDialog] = useState(false);
+  const [closeOutcome, setCloseOutcome] = useState<PartyOutcome>("success");
+  const [inviteCallsign, setInviteCallsign] = useState("");
+  const [inviting, setInviting] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const activity = PARTY_ACTIVITIES[party.activity];
@@ -80,10 +91,17 @@ export default function PartyDetailClient({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  // Load leader reputation
+  // Load leader reputation + events
   useEffect(() => {
     getLeaderReputation(party.creator_id).then(setLeaderRep);
   }, [party.creator_id]);
+
+  const refreshEvents = useCallback(async () => {
+    const evts = await getPartyEvents(party.id);
+    setEvents(evts);
+  }, [party.id]);
+
+  useEffect(() => { refreshEvents(); }, [refreshEvents]);
 
   // Check for pending rating when party becomes closed
   useEffect(() => {
@@ -95,12 +113,12 @@ export default function PartyDetailClient({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [party.status, party.id]);
 
-  // Countdown timer for auto-close (24h from updated_at)
+  // Countdown timer for auto-close (24h from creation)
   useEffect(() => {
     if (party.status === "closed") { setCountdown(""); return; }
 
     function tick() {
-      const deadline = new Date(party.updated_at).getTime() + 24 * 60 * 60 * 1000;
+      const deadline = new Date(party.created_at).getTime() + 24 * 60 * 60 * 1000;
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
         setCountdown("EXPIRED");
@@ -115,7 +133,7 @@ export default function PartyDetailClient({
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [party.status, party.updated_at]);
+  }, [party.status, party.created_at]);
 
   // Real-time: refresh party data when changes happen
   const refreshParty = useCallback(async () => {
@@ -171,14 +189,9 @@ export default function PartyDetailClient({
   const { broadcast } = usePartyRealtime({
     partyId: party.id,
     currentUserId,
-    onPartyChange: refreshParty,
-    onMembersChange: () => {
-      refreshParty();
-      refreshMessages();
-    },
-    onNewMessage: () => {
-      refreshMessages();
-    },
+    onPartyChange: () => { refreshParty(); refreshEvents(); },
+    onMembersChange: () => { refreshParty(); refreshMessages(); refreshEvents(); },
+    onNewMessage: () => { refreshMessages(); },
   });
 
   async function handleAction(
@@ -240,6 +253,35 @@ export default function PartyDetailClient({
     } else {
       setRatingDone(true);
       setShowRating(false);
+    }
+  }
+
+  async function handleCloseWithOutcome() {
+    setShowCloseDialog(false);
+    await handleAction(
+      () => closeParty(party.id, closeOutcome),
+      "/dashboard/parties",
+      "party_update",
+      getOtherMemberIds(),
+    );
+  }
+
+  async function handleInvite(e: React.FormEvent) {
+    e.preventDefault();
+    if (!inviteCallsign.trim()) return;
+    setInviting(true);
+    setInviteMsg(null);
+    const result = await inviteToParty(party.id, inviteCallsign);
+    setInviting(false);
+    if (result.error) {
+      setInviteMsg({ type: "err", text: result.error });
+    } else {
+      setInviteMsg({ type: "ok", text: `${inviteCallsign.toUpperCase()} ADDED` });
+      setInviteCallsign("");
+      broadcast({ type: "members_change", sender: currentUserId });
+      broadcastHubChange();
+      await refreshParty();
+      await refreshEvents();
     }
   }
 
@@ -374,10 +416,37 @@ export default function PartyDetailClient({
           {party.voice_chat && (
             <div className="flex items-center gap-1.5">
               <span className="font-mono text-[9px] text-text-muted tracking-widest uppercase">Voice:</span>
-              <span className="font-mono text-[11px] text-accent/80 tracking-wider break-all">
-                {party.voice_chat}
+              {party.voice_chat.startsWith("http") ? (
+                <a
+                  href={party.voice_chat}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-[11px] text-accent/80 hover:text-accent tracking-wider break-all transition-colors"
+                >
+                  {party.voice_chat.replace(/^https?:\/\//, "").split("/")[0]}
+                  <span className="ml-1 text-[8px] text-text-muted">↗</span>
+                </a>
+              ) : (
+                <span className="font-mono text-[11px] text-accent/80 tracking-wider break-all">
+                  {party.voice_chat}
+                </span>
+              )}
+            </div>
+          )}
+          {party.passcode && (isMember || isCreator) && (
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[8px] text-text-muted/60 tracking-widest uppercase border border-border/50 px-1.5 py-0.5">
+                PRIVATE
               </span>
             </div>
+          )}
+          {party.outcome && (
+            <span
+              className="font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border"
+              style={{ color: PARTY_OUTCOMES[party.outcome].color, borderColor: `${PARTY_OUTCOMES[party.outcome].color}40` }}
+            >
+              {PARTY_OUTCOMES[party.outcome].label}
+            </span>
           )}
           <span className="font-mono text-[8px] text-text-muted/50 tracking-widest ml-auto">
             Created {getTimeAgo(party.created_at)}
@@ -549,6 +618,57 @@ export default function PartyDetailClient({
         </div>
       )}
 
+      {/* Close Party Outcome Dialog */}
+      {showCloseDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="mtc-panel bg-bg-surface p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-1 h-5 bg-danger" />
+              <h2 className="font-mono text-xs tracking-[0.25em] text-text-dim uppercase">
+                Close Party
+              </h2>
+            </div>
+            <p className="font-mono text-[10px] text-text-muted tracking-widest mb-4">
+              How did the mission go? Members will rate your leadership after closing.
+            </p>
+            <div className="space-y-2 mb-5">
+              {(["success", "fail", "abandoned"] as PartyOutcome[]).map((o) => (
+                <button
+                  key={o}
+                  onClick={() => setCloseOutcome(o)}
+                  className={[
+                    "w-full px-4 py-2.5 border font-mono text-[10px] tracking-widest uppercase text-left transition-all flex items-center gap-2",
+                    closeOutcome === o
+                      ? "bg-opacity-15"
+                      : "border-border text-text-muted hover:border-border-bright",
+                  ].join(" ")}
+                  style={
+                    closeOutcome === o
+                      ? { color: PARTY_OUTCOMES[o].color, borderColor: `${PARTY_OUTCOMES[o].color}50`, backgroundColor: `${PARTY_OUTCOMES[o].color}12` }
+                      : undefined
+                  }
+                >
+                  <span className="w-2 h-2" style={{ backgroundColor: PARTY_OUTCOMES[o].color }} />
+                  {PARTY_OUTCOMES[o].label}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowCloseDialog(false)} className="mtc-btn-ghost text-[10px]">
+                CANCEL
+              </button>
+              <button
+                onClick={handleCloseWithOutcome}
+                disabled={loading}
+                className="mtc-btn-ghost text-danger border-danger/30 hover:bg-danger/10 text-[10px]"
+              >
+                {loading ? "CLOSING..." : "CLOSE PARTY"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Rating Modal */}
       {showRating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
@@ -678,7 +798,7 @@ export default function PartyDetailClient({
                   EDIT
                 </button>
                 <button
-                  onClick={() => confirmThen("close this party", () => handleAction(() => closeParty(party.id), "/dashboard/parties", "party_update", getOtherMemberIds()))}
+                  onClick={() => setShowCloseDialog(true)}
                   disabled={loading}
                   className="mtc-btn-ghost text-danger border-danger/30 hover:bg-danger/10"
                 >
@@ -917,6 +1037,85 @@ export default function PartyDetailClient({
             </form>
           )}
         </div>
+      </div>
+
+      {/* Invite + Activity Log row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        {/* Invite by Callsign (creator only, open parties) */}
+        {isCreator && party.status === "open" && (
+          <div className="mtc-panel bg-bg-surface p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-1 h-4 bg-accent" />
+              <h3 className="font-mono text-[10px] tracking-[0.25em] text-text-dim uppercase">
+                Invite by Callsign
+              </h3>
+            </div>
+            <form onSubmit={handleInvite} className="flex items-end gap-2">
+              <div className="flex-1 space-y-1">
+                <input
+                  type="text"
+                  required
+                  value={inviteCallsign}
+                  onChange={(e) => { setInviteCallsign(e.target.value); setInviteMsg(null); }}
+                  placeholder="e.g. SHADOW-7"
+                  className="mtc-input font-mono text-[11px] w-full uppercase"
+                  disabled={inviting}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={inviting || !inviteCallsign.trim()}
+                className="mtc-btn-primary text-[10px] px-4 whitespace-nowrap"
+              >
+                {inviting ? "..." : "INVITE"}
+              </button>
+            </form>
+            {inviteMsg && (
+              <p className={`mt-2 font-mono text-[9px] tracking-widest ${inviteMsg.type === "ok" ? "text-accent" : "text-danger"}`}>
+                {inviteMsg.type === "ok" ? "✓" : "⚠"} {inviteMsg.text}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Activity Log */}
+        {(isMember || isCreator) && events.length > 0 && (
+          <div className={[
+            "mtc-panel bg-bg-surface p-5",
+            !(isCreator && party.status === "open") ? "lg:col-span-2" : "",
+          ].join(" ")}>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-1 h-4 bg-text-muted/40" />
+              <h3 className="font-mono text-[10px] tracking-[0.25em] text-text-dim uppercase">
+                Activity Log
+              </h3>
+              <span className="font-mono text-[8px] text-text-muted/40 tracking-widest ml-auto">
+                {events.length} event{events.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <div className="max-h-[200px] overflow-y-auto space-y-1 scrollbar-thin">
+              {events.map((evt) => (
+                <div key={evt.id} className="flex items-start gap-2 py-1">
+                  <span className={[
+                    "w-1 h-1 mt-1.5 shrink-0",
+                    evt.event_type === "join" ? "bg-accent" :
+                    evt.event_type === "leave" ? "bg-amber" :
+                    evt.event_type === "kick" ? "bg-danger" :
+                    evt.event_type === "closed" ? "bg-text-muted" :
+                    evt.event_type === "status_change" ? "bg-amber" :
+                    "bg-text-muted/40",
+                  ].join(" ")} />
+                  <span className="font-mono text-[9px] text-text-muted tracking-wide leading-relaxed flex-1">
+                    {evt.detail}
+                  </span>
+                  <span className="font-mono text-[7px] text-text-muted/40 tracking-widest shrink-0">
+                    {getTimeShort(evt.created_at)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </PageTransition>
   );

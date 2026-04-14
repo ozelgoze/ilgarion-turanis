@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
-import type { PartyActivity, PartyStatus, PartyWithDetails, PartyMessageWithProfile, PartyNotification, PartyNotificationType, LeaderReputation } from "@/types/database";
+import type { PartyActivity, PartyStatus, PartyOutcome, PartyWithDetails, PartyMessageWithProfile, PartyNotification, PartyNotificationType, PartyEvent, LeaderReputation } from "@/types/database";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -17,6 +17,21 @@ async function getPartyTitle(partyId: string): Promise<string> {
   return data?.title ?? "Unknown Party";
 }
 
+async function logPartyEvent(
+  partyId: string,
+  userId: string | null,
+  eventType: string,
+  detail: string | null = null,
+): Promise<void> {
+  const supabase = await createClient();
+  await supabase.from("party_events").insert({
+    party_id: partyId,
+    user_id: userId,
+    event_type: eventType,
+    detail,
+  });
+}
+
 // ─── Create a Party ─────────────────────────────────────────────────────────
 
 export async function createParty(fields: {
@@ -27,6 +42,7 @@ export async function createParty(fields: {
   maxPlayers?: number;
   region?: string;
   voiceChat?: string;
+  passcode?: string;
 }): Promise<{ party?: { id: string }; error?: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -35,6 +51,11 @@ export async function createParty(fields: {
   const title = fields.title.trim();
   if (!title || title.length < 3) return { error: "TITLE MUST BE AT LEAST 3 CHARACTERS." };
   if (title.length > 80) return { error: "TITLE TOO LONG (MAX 80 CHARS)." };
+
+  const passcode = fields.passcode?.trim() || null;
+  if (passcode && (passcode.length < 3 || passcode.length > 20)) {
+    return { error: "PASSCODE MUST BE 3-20 CHARACTERS." };
+  }
 
   const { data, error } = await supabase
     .from("parties")
@@ -47,6 +68,7 @@ export async function createParty(fields: {
       max_players: fields.maxPlayers ?? 4,
       region: fields.region?.trim() || "any",
       voice_chat: fields.voiceChat?.trim() || null,
+      passcode,
     })
     .select("id")
     .single();
@@ -58,6 +80,9 @@ export async function createParty(fields: {
     party_id: data.id,
     user_id: user.id,
   });
+
+  const callsign = await getCallsign(user.id);
+  await logPartyEvent(data.id, user.id, "created", `${callsign} created the party`);
 
   return { party: { id: data.id } };
 }
@@ -111,6 +136,8 @@ export async function searchParties(filters?: {
 
   return (data as unknown as PartyWithDetails[]).map((p) => ({
     ...p,
+    // Never expose raw passcode to listing — use masked flag instead
+    passcode: p.passcode ? "***" : null,
     member_count: p.members?.length ?? 0,
   }));
 }
@@ -135,7 +162,7 @@ export async function getParty(partyId: string): Promise<PartyWithDetails | null
   if (error || !data) return null;
 
   const party = data as unknown as PartyWithDetails;
-  return { ...party, member_count: party.members?.length ?? 0 };
+  return { ...party, passcode: party.passcode ? "***" : null, member_count: party.members?.length ?? 0 };
 }
 
 // ─── Get My Parties ─────────────────────────────────────────────────────────
@@ -168,13 +195,14 @@ export async function getMyParties(): Promise<PartyWithDetails[]> {
 
   return (data as unknown as PartyWithDetails[]).map((p) => ({
     ...p,
+    passcode: p.passcode ? "***" : null,
     member_count: p.members?.length ?? 0,
   }));
 }
 
 // ─── Join a Party ───────────────────────────────────────────────────────────
 
-export async function joinParty(partyId: string): Promise<{ error?: string }> {
+export async function joinParty(partyId: string, passcode?: string): Promise<{ error?: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "AUTHENTICATION REQUIRED." };
@@ -182,12 +210,17 @@ export async function joinParty(partyId: string): Promise<{ error?: string }> {
   // Check party exists and is open
   const { data: party } = await supabase
     .from("parties")
-    .select("id, status, max_players")
+    .select("id, status, max_players, passcode")
     .eq("id", partyId)
     .single();
 
   if (!party) return { error: "PARTY NOT FOUND." };
   if (party.status !== "open") return { error: "PARTY IS NO LONGER ACCEPTING MEMBERS." };
+
+  // Check passcode for private parties
+  if (party.passcode && party.passcode !== (passcode?.trim() ?? "")) {
+    return { error: party.passcode && !passcode ? "THIS IS A PRIVATE PARTY. PASSCODE REQUIRED." : "INCORRECT PASSCODE." };
+  }
 
   // Check not already a member
   const { data: existing } = await supabase
@@ -229,9 +262,10 @@ export async function joinParty(partyId: string): Promise<{ error?: string }> {
     await supabase.from("parties").update({ status: "full" }).eq("id", partyId);
   }
 
-  // Notify party members
+  // Notify party members + log event
   const [callsign, title] = await Promise.all([getCallsign(user.id), getPartyTitle(partyId)]);
   await notifyPartyMembers(partyId, user.id, "member_joined", callsign, title);
+  await logPartyEvent(partyId, user.id, "join", `${callsign} joined the party`);
 
   return {};
 }
@@ -273,10 +307,10 @@ export async function leaveParty(partyId: string): Promise<{ error?: string }> {
     await supabase.from("parties").update({ status: "open" }).eq("id", partyId);
   }
 
-  // Notify remaining members
+  // Notify remaining members (creator is already in party_members, so notifyPartyMembers covers them)
   const callsign = await getCallsign(user.id);
   await notifyPartyMembers(partyId, user.id, "member_left", callsign, currentParty?.title ?? "Party");
-  await notifyPartyCreator(partyId, user.id, "member_left", callsign, currentParty?.title ?? "Party");
+  await logPartyEvent(partyId, user.id, "leave", `${callsign} left the party`);
 
   return {};
 }
@@ -299,18 +333,22 @@ export async function updatePartyStatus(
 
   if (error) return { error: "FAILED TO UPDATE PARTY STATUS." };
 
+  const callsign = await getCallsign(user.id);
+
   // Notify on mission start
   if (status === "in_progress") {
-    const [callsign, title] = await Promise.all([getCallsign(user.id), getPartyTitle(partyId)]);
+    const title = await getPartyTitle(partyId);
     await notifyPartyMembers(partyId, user.id, "party_started", callsign, title);
   }
+
+  await logPartyEvent(partyId, user.id, "status_change", `${callsign} changed status to ${status}`);
 
   return {};
 }
 
 // ─── Delete / Close a Party ─────────────────────────────────────────────────
 
-export async function closeParty(partyId: string): Promise<{ error?: string }> {
+export async function closeParty(partyId: string, outcome?: PartyOutcome): Promise<{ error?: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "AUTHENTICATION REQUIRED." };
@@ -324,11 +362,15 @@ export async function closeParty(partyId: string): Promise<{ error?: string }> {
 
   const { error } = await supabase
     .from("parties")
-    .update({ status: "closed" })
+    .update({ status: "closed" as PartyStatus, outcome: outcome ?? "abandoned" })
     .eq("id", partyId)
     .eq("creator_id", user.id);
 
   if (error) return { error: "FAILED TO CLOSE PARTY." };
+
+  const outcomeLabel = outcome ?? "abandoned";
+  await logPartyEvent(partyId, user.id, "closed", `${callsign} closed the party — ${outcomeLabel}`);
+
   return {};
 }
 
@@ -380,6 +422,7 @@ export async function kickMember(
 
   // Notify remaining members
   await notifyPartyMembers(partyId, user.id, "member_kicked", kickedCallsign, title);
+  await logPartyEvent(partyId, user.id, "kick", `${kickedCallsign} was kicked`);
 
   return {};
 }
@@ -450,14 +493,14 @@ export async function expireStaleParties(): Promise<void> {
     .from("parties")
     .select("id, creator_id")
     .in("status", ["open", "in_progress"])
-    .lt("updated_at", cutoff);
+    .lt("created_at", cutoff);
 
   if (!staleParties || staleParties.length === 0) return;
 
-  // Close all stale parties
+  // Close all stale parties with "abandoned" outcome
   await supabase
     .from("parties")
-    .update({ status: "closed" as PartyStatus })
+    .update({ status: "closed" as PartyStatus, outcome: "abandoned" as PartyOutcome })
     .in("id", staleParties.map((p) => p.id));
 
   // Insert 0-star penalty ratings for each expired party
@@ -490,6 +533,9 @@ export async function expireStaleParties(): Promise<void> {
     if (penalties.length > 0) {
       await supabase.from("party_ratings").insert(penalties);
     }
+
+    // Log the auto-expire event
+    await logPartyEvent(party.id, null, "closed", "Party auto-expired after 24 hours — abandoned");
   }
 }
 
@@ -779,5 +825,111 @@ export async function editParty(
     .eq("creator_id", user.id);
 
   if (error) return { error: "FAILED TO UPDATE PARTY." };
+
+  const callsign = await getCallsign(user.id);
+  await logPartyEvent(partyId, user.id, "edit", `${callsign} edited the party`);
+
+  return {};
+}
+
+// ─── Get Party Event Log ──────────────────────────────────────────────────
+
+export async function getPartyEvents(partyId: string, limit = 50): Promise<PartyEvent[]> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from("party_events")
+    .select("*")
+    .eq("party_id", partyId)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  if (error || !data) return [];
+  return data as PartyEvent[];
+}
+
+// ─── Invite to Party by Callsign (Creator Only) ──────────────────────────
+
+export async function inviteToParty(
+  partyId: string,
+  callsign: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "AUTHENTICATION REQUIRED." };
+
+  // Verify caller is the creator
+  const { data: party } = await supabase
+    .from("parties")
+    .select("creator_id, status, max_players, title")
+    .eq("id", partyId)
+    .single();
+
+  if (!party) return { error: "PARTY NOT FOUND." };
+  if (party.creator_id !== user.id) return { error: "ONLY THE PARTY LEADER CAN INVITE." };
+  if (party.status !== "open") return { error: "PARTY IS NOT ACCEPTING NEW MEMBERS." };
+
+  // Find user by callsign
+  const { data: target } = await supabase
+    .from("profiles")
+    .select("id, callsign")
+    .ilike("callsign", callsign.trim())
+    .single();
+
+  if (!target) return { error: `NO PLAYER FOUND WITH CALLSIGN "${callsign.toUpperCase()}".` };
+  if (target.id === user.id) return { error: "CANNOT INVITE YOURSELF." };
+
+  // Check not already a member
+  const { data: existing } = await supabase
+    .from("party_members")
+    .select("id")
+    .eq("party_id", partyId)
+    .eq("user_id", target.id)
+    .single();
+
+  if (existing) return { error: `${target.callsign.toUpperCase()} IS ALREADY IN THIS PARTY.` };
+
+  // Check capacity
+  const { count } = await supabase
+    .from("party_members")
+    .select("id", { count: "exact", head: true })
+    .eq("party_id", partyId);
+
+  if (count !== null && count >= party.max_players) {
+    return { error: "PARTY IS FULL." };
+  }
+
+  // Add them directly
+  const { error } = await supabase.from("party_members").insert({
+    party_id: partyId,
+    user_id: target.id,
+  });
+
+  if (error) return { error: "FAILED TO ADD MEMBER." };
+
+  // Check if now full
+  const { count: newCount } = await supabase
+    .from("party_members")
+    .select("id", { count: "exact", head: true })
+    .eq("party_id", partyId);
+
+  if (newCount !== null && newCount >= party.max_players) {
+    await supabase.from("parties").update({ status: "full" }).eq("id", partyId);
+  }
+
+  // Notify the invited user
+  const leaderCallsign = await getCallsign(user.id);
+  await supabase.from("party_notifications").insert({
+    user_id: target.id,
+    party_id: partyId,
+    type: "member_joined",
+    actor_callsign: leaderCallsign,
+    party_title: party.title,
+  });
+
+  await logPartyEvent(partyId, user.id, "invite", `${leaderCallsign} invited ${target.callsign}`);
+
   return {};
 }

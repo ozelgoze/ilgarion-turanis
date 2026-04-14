@@ -180,6 +180,13 @@ export type PartyActivity =
   | "other";
 
 export type PartyStatus = "open" | "full" | "closed" | "in_progress";
+export type PartyOutcome = "success" | "fail" | "abandoned";
+
+export const PARTY_OUTCOMES: Record<PartyOutcome, { label: string; color: string }> = {
+  success: { label: "MISSION SUCCESS", color: "#00ffcc" },
+  fail: { label: "MISSION FAILED", color: "#FF2442" },
+  abandoned: { label: "ABANDONED", color: "#666" },
+};
 
 export const PARTY_ACTIVITIES: Record<PartyActivity, { label: string; icon: string; color: string; description: string }> = {
   bounty_hunting: { label: "Bounty Hunting", icon: "crosshair", color: "#FF2442", description: "Track and eliminate targets for aUEC" },
@@ -215,8 +222,19 @@ export interface Party {
   status: PartyStatus;
   region: string | null;
   voice_chat: string | null;
+  passcode: string | null;
+  outcome: PartyOutcome | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PartyEvent {
+  id: string;
+  party_id: string;
+  user_id: string | null;
+  event_type: string;
+  detail: string | null;
+  created_at: string;
 }
 
 export interface PartyMember {
