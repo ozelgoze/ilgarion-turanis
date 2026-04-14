@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
-import type { PartyActivity, PartyStatus, PartyOutcome, PartyWithDetails, PartyMessageWithProfile, PartyNotification, PartyNotificationType, PartyEvent, LeaderReputation } from "@/types/database";
+import type { PartyActivity, PartyStatus, PartyOutcome, PartyWithDetails, PartyMessageWithProfile, PartyNotification, PartyNotificationType, PartyEvent, LeaderReputation, PublicPartyListing } from "@/types/database";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -800,7 +800,7 @@ export async function getLeaderReputation(
 
 export async function editParty(
   partyId: string,
-  fields: { title?: string; description?: string; maxPlayers?: number; voiceChat?: string; region?: string }
+  fields: { title?: string; description?: string; maxPlayers?: number; voiceChat?: string; region?: string; startingStation?: string }
 ): Promise<{ error?: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -950,3 +950,92 @@ export async function inviteToParty(
 
   return { invitedUserId: target.id };
 }
+
+// ─── Public Party Listing (no auth required) ──────────────────────────────
+// Used on the landing page so unauthenticated visitors can browse open parties.
+
+export async function getPublicParties(filters?: {
+  activity?: PartyActivity;
+  region?: string;
+}): Promise<PublicPartyListing[]> {
+  const supabase = await createClient();
+
+  let query = supabase
+    .from("parties")
+    .select(`
+      id, activity, title, description, max_players, region, status,
+      starting_station, passcode, created_at,
+      creator:creator_id(id, callsign, sc_handle),
+      members:party_members(id)
+    `)
+    .in("status", ["open", "in_progress"])
+    .order("created_at", { ascending: false })
+    .limit(30);
+
+  if (filters?.activity) {
+    query = query.eq("activity", filters.activity);
+  }
+  if (filters?.region && filters.region !== "any") {
+    query = query.eq("region", filters.region);
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return [];
+
+  // Collect unique creator IDs for batch reputation lookup
+  const creatorIds = [...new Set(
+    (data as unknown as Array<{ creator: { id: string } }>)
+      .map((p) => p.creator?.id)
+      .filter(Boolean)
+  )];
+
+  // Batch fetch reputations
+  const repMap = new Map<string, LeaderReputation | null>();
+  await Promise.all(
+    creatorIds.map(async (id) => {
+      const rep = await getLeaderReputation(id);
+      repMap.set(id, rep);
+    })
+  );
+
+  return (data as unknown as Array<Record<string, unknown>>).map((p) => {
+    const creator = p.creator as { id: string; callsign: string; sc_handle: string | null } | null;
+    const members = p.members as Array<{ id: string }> | null;
+    return {
+      id: p.id as string,
+      activity: p.activity as PartyActivity,
+      title: p.title as string,
+      description: p.description as string | null,
+      creator_callsign: creator?.callsign ?? "UNKNOWN",
+      creator_sc_handle: creator?.sc_handle ?? null,
+      creator_reputation: creator ? repMap.get(creator.id) ?? null : null,
+      member_count: members?.length ?? 0,
+      max_players: p.max_players as number,
+      region: p.region as string | null,
+      starting_station: p.starting_station as string | null,
+      is_private: !!(p.passcode),
+      status: p.status as PartyStatus,
+      created_at: p.created_at as string,
+    };
+  });
+}
+
+/** Get aggregate stats for the landing page hero section */
+export async function getPublicPartyStats(): Promise<{ activeParties: number; totalPlayers: number }> {
+  const supabase = await createClient();
+
+  const { count: partyCount } = await supabase
+    .from("parties")
+    .select("id", { count: "exact", head: true })
+    .in("status", ["open", "in_progress"]);
+
+  const { count: memberCount } = await supabase
+    .from("party_members")
+    .select("id", { count: "exact", head: true });
+
+  return {
+    activeParties: partyCount ?? 0,
+    totalPlayers: memberCount ?? 0,
+  };
+}
+

@@ -389,3 +389,21 @@ export interface LeaderReputation {
   parties_led: number;
   last_activity: PartyActivity;
 }
+
+/** Reduced party listing for the public landing page (no auth required). */
+export interface PublicPartyListing {
+  id: string;
+  activity: PartyActivity;
+  title: string;
+  description: string | null;
+  creator_callsign: string;
+  creator_sc_handle: string | null;
+  creator_reputation: LeaderReputation | null;
+  member_count: number;
+  max_players: number;
+  region: string | null;
+  starting_station: string | null;
+  is_private: boolean;
+  status: PartyStatus;
+  created_at: string;
+}
