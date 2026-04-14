@@ -16,8 +16,14 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "UEE ATAK APP",
-  description: "Ilgarion Turanis [SCG] — UEE Tactical Operations & Briefing System",
+  title: "UEE ATAK — Star Citizen Party Finder & Tactical Ops",
+  description:
+    "Find squads for Star Citizen missions. Real-time LFG party finder, tactical map overlays, and briefing systems for Star Citizen organizations.",
+  openGraph: {
+    title: "UEE ATAK — Star Citizen Party Finder",
+    description: "Find your squad. Real-time LFG for the 'verse.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({

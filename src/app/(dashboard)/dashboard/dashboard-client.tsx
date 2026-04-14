@@ -54,17 +54,6 @@ export default function DashboardClient({
         </Link>
       </div>
 
-      {/* Quick Actions */}
-      <div className="flex flex-wrap items-center gap-3 mb-6">
-        <Link
-          href="/dashboard/parties"
-          className="mtc-btn-ghost text-[10px] flex items-center gap-2 group"
-        >
-          <span className="w-1.5 h-1.5 bg-accent group-hover:animate-pulse" />
-          PARTY FINDER / LFG
-        </Link>
-      </div>
-
       {/* Quick Stats Bar */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
