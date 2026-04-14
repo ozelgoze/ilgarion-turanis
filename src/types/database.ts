@@ -407,3 +407,20 @@ export interface PublicPartyListing {
   status: PartyStatus;
   created_at: string;
 }
+
+// ─── User Hangar ──────────────────────────────────────────────
+
+export type ShipSize = "xs" | "s" | "m" | "l" | "xl" | "capital";
+
+export interface HangarShip {
+  id: string;
+  user_id: string;
+  ship_name: string;
+  nickname: string | null;
+  is_primary: boolean;
+  erkul_link: string | null;
+  insurance: string | null;
+  notes: string | null;
+  created_at: string;
+}
+

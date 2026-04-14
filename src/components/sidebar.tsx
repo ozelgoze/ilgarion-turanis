@@ -49,6 +49,17 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    href: "/dashboard/fleet",
+    label: "FLEET HUB",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M12 2 L4 9 L4 16 L12 22 L20 16 L20 9 Z" />
+        <line x1="12" y1="2" x2="12" y2="22" />
+        <line x1="4" y1="9" x2="20" y2="9" />
+      </svg>
+    ),
+  },
+  {
     href: "/dashboard/parties",
     label: "PARTY FINDER",
     icon: (
