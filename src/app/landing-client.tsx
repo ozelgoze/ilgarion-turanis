@@ -1,17 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import AppLogo from "@/components/mtc-logo";
 import { PublicPartyCard } from "@/components/party-card";
+import { createClient } from "@/utils/supabase/client";
 import {
   PARTY_ACTIVITIES,
   type PartyActivity,
   type PublicPartyListing,
 } from "@/types/database";
-import { getPublicParties } from "@/app/actions/parties";
+import { getPublicParties, getPublicPartyStats } from "@/app/actions/parties";
 
 // ── Regions ─────────────────────────────────────────────────────────────────
 
@@ -41,29 +42,82 @@ interface LandingClientProps {
 export default function LandingClient({
   initialParties,
   isAuthenticated,
-  stats,
+  stats: initialStats,
 }: LandingClientProps) {
   const router = useRouter();
   const [parties, setParties] = useState(initialParties);
+  const [liveStats, setLiveStats] = useState(initialStats);
   const [filterActivity, setFilterActivity] = useState<PartyActivity | "">("");
   const [filterRegion, setFilterRegion] = useState("");
   const [hasSpots, setHasSpots] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
 
-  // Auto-refresh every 30s
+  // Refs to access latest filter values inside broadcast callbacks
+  const filterActivityRef = useRef(filterActivity);
+  const filterRegionRef = useRef(filterRegion);
+  filterActivityRef.current = filterActivity;
+  filterRegionRef.current = filterRegion;
+
+  // ── Refresh party list + stats ────────────────────────────
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    const results = await getPublicParties({
-      activity: filterActivity || undefined,
-      region: filterRegion || undefined,
-    });
+    const [results, stats] = await Promise.all([
+      getPublicParties({
+        activity: filterActivityRef.current || undefined,
+        region: filterRegionRef.current || undefined,
+      }),
+      getPublicPartyStats(),
+    ]);
     setParties(results);
+    setLiveStats(stats);
     setRefreshing(false);
-  }, [filterActivity, filterRegion]);
+  }, []);
 
+  // ── Supabase Realtime: Broadcast + postgres_changes ───────
   useEffect(() => {
-    const interval = setInterval(refresh, 30000);
-    return () => clearInterval(interval);
+    const supabase = createClient();
+
+    // Primary: Broadcast channel — same channel the dashboard writes to
+    const broadcastChannel = supabase
+      .channel("party-hub", {
+        config: { broadcast: { self: false } },
+      })
+      .on("broadcast", { event: "party_list_change" }, () => {
+        // Another user created/joined/left/closed a party → refresh
+        refresh();
+      })
+      .subscribe((status) => {
+        setRealtimeConnected(status === "SUBSCRIBED");
+      });
+
+    // Fallback: postgres_changes on the parties table for direct DB changes
+    const dbChannel = supabase
+      .channel("party-db-landing")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "parties" },
+        () => {
+          refresh();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "party_members" },
+        () => {
+          refresh();
+        }
+      )
+      .subscribe();
+
+    // Safety net: poll every 60s in case broadcast/postgres_changes miss events
+    const fallbackInterval = setInterval(refresh, 60000);
+
+    return () => {
+      supabase.removeChannel(broadcastChannel);
+      supabase.removeChannel(dbChannel);
+      clearInterval(fallbackInterval);
+    };
   }, [refresh]);
 
   // Re-fetch on filter change
@@ -163,13 +217,13 @@ export default function LandingClient({
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 bg-accent rounded-full animate-pulse" />
                 <span className="font-mono text-[11px] tracking-widest text-accent uppercase">
-                  {stats.activeParties} ACTIVE PART{stats.activeParties !== 1 ? "IES" : "Y"}
+                  {liveStats.activeParties} ACTIVE PART{liveStats.activeParties !== 1 ? "IES" : "Y"}
                 </span>
               </div>
               <div className="w-px h-4 bg-border" />
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[11px] tracking-widest text-text-dim uppercase">
-                  {stats.totalPlayers} PLAYER{stats.totalPlayers !== 1 ? "S" : ""} IN SQUADS
+                  {liveStats.totalPlayers} PLAYER{liveStats.totalPlayers !== 1 ? "S" : ""} IN SQUADS
                 </span>
               </div>
             </motion.div>
@@ -267,11 +321,17 @@ export default function LandingClient({
 
             <div className="flex-1" />
 
-            {/* Refresh indicator */}
+            {/* Realtime status indicator */}
             <div className="flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${refreshing ? "bg-amber animate-pulse" : "bg-accent/40"}`} />
+              <span className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                refreshing
+                  ? "bg-amber animate-pulse"
+                  : realtimeConnected
+                    ? "bg-accent animate-pulse"
+                    : "bg-text-muted/40"
+              }`} />
               <span className="font-mono text-[8px] tracking-widest text-text-muted uppercase">
-                {refreshing ? "REFRESHING..." : "LIVE"}
+                {refreshing ? "SYNCING..." : realtimeConnected ? "REALTIME" : "CONNECTING..."}
               </span>
             </div>
           </div>
