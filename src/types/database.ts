@@ -276,3 +276,24 @@ export interface PartyNotification {
   read: boolean;
   created_at: string;
 }
+
+// ─── Party Rating System ──────────────────────────────────────
+
+export interface PartyRating {
+  id: string;
+  party_id: string;
+  leader_id: string;
+  rater_id: string;
+  stars: number;
+  created_at: string;
+}
+
+/** Aggregated reputation for a party leader across all their closed parties.
+ *  Overall score = total stars / total votes (each individual vote weighs equally,
+ *  so parties with more voters naturally carry more weight). */
+export interface LeaderReputation {
+  avg_stars: number;
+  total_ratings: number;
+  parties_led: number;
+  last_activity: PartyActivity;
+}

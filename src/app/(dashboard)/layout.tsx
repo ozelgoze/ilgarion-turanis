@@ -35,6 +35,7 @@ export default async function DashboardLayout({
         <TopBar
           callsign={profile?.callsign ?? "OPERATIVE"}
           notifications={notifications}
+          userId={user.id}
         />
         <main className="flex-1 overflow-auto">{children}</main>
       </div>

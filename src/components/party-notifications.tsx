@@ -1,24 +1,54 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import {
   PARTY_NOTIFICATION_LABELS,
   type PartyNotification,
   type PartyNotificationType,
 } from "@/types/database";
-import { markNotificationsRead, clearAllNotifications } from "@/app/actions/parties";
+import { markNotificationsRead, clearAllNotifications, getMyPartyNotifications } from "@/app/actions/parties";
+import { createClient } from "@/utils/supabase/client";
 
 interface Props {
   notifications: PartyNotification[];
+  userId: string;
   onDismiss?: () => void;
 }
 
-export default function PartyNotifications({ notifications: initial, onDismiss }: Props) {
+export default function PartyNotifications({ notifications: initial, userId, onDismiss }: Props) {
   const [notifications, setNotifications] = useState(initial);
   const [open, setOpen] = useState(false);
+  const channelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  // Refresh notifications from DB
+  const refresh = useCallback(async () => {
+    const fresh = await getMyPartyNotifications();
+    setNotifications(fresh);
+  }, []);
+
+  // Subscribe to global notification broadcast channel
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("party-notifications", { config: { broadcast: { self: false } } })
+      .on("broadcast", { event: "new_notification" }, (msg) => {
+        // Only refresh if this user is in the target list
+        const targets: string[] | undefined = msg.payload?.targetUserIds;
+        if (!targets || targets.includes(userId)) {
+          refresh();
+        }
+      })
+      .subscribe();
+
+    channelRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+      channelRef.current = null;
+    };
+  }, [userId, refresh]);
 
   async function handleOpen() {
     setOpen(!open);

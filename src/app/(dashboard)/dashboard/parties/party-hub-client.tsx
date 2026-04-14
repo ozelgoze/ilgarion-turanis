@@ -11,8 +11,9 @@ import {
   type PartyActivity,
   type PartyNotification,
   type PartyWithDetails,
+  type LeaderReputation,
 } from "@/types/database";
-import { createParty, searchParties, joinParty } from "@/app/actions/parties";
+import { createParty, searchParties, joinParty, getLeaderReputation } from "@/app/actions/parties";
 import PartyNotifications from "@/components/party-notifications";
 
 interface PartyHubClientProps {
@@ -47,6 +48,31 @@ export default function PartyHubClient({
   const [parties, setParties] = useState(initialParties);
   const [myParties] = useState(initialMyParties);
 
+  // ── Leader reputation cache ──
+  const [reputations, setReputations] = useState<Record<string, LeaderReputation | null>>({});
+
+  // Load reputations for all visible parties' creators
+  useEffect(() => {
+    const allParties = [...parties, ...myParties];
+    const creatorIds = [...new Set(allParties.map((p) => p.creator_id))];
+    const missing = creatorIds.filter((id) => !(id in reputations));
+    if (missing.length === 0) return;
+
+    Promise.all(
+      missing.map(async (id) => {
+        const rep = await getLeaderReputation(id);
+        return [id, rep] as const;
+      })
+    ).then((results) => {
+      setReputations((prev) => {
+        const next = { ...prev };
+        for (const [id, rep] of results) next[id] = rep;
+        return next;
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parties, myParties]);
+
   // ── Search state ─────────────
   const [searchActivity, setSearchActivity] = useState<PartyActivity | "">("");
   const [searchText, setSearchText] = useState("");
@@ -70,6 +96,7 @@ export default function PartyHubClient({
 
   // ── Real-time: listen for party list changes via broadcast ──
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
+  const notifChannelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
 
   const refreshList = useCallback(async () => {
     const results = await searchParties({
@@ -91,11 +118,26 @@ export default function PartyHubClient({
       .subscribe();
 
     channelRef.current = channel;
+
+    // Subscribe to notification broadcast channel for sending
+    const notifCh = supabase.channel("party-notifications", { config: { broadcast: { self: false } } }).subscribe();
+    notifChannelRef.current = notifCh;
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(notifCh);
       channelRef.current = null;
+      notifChannelRef.current = null;
     };
   }, [refreshList]);
+
+  function broadcastNotification(targetUserIds: string[]) {
+    notifChannelRef.current?.send({
+      type: "broadcast",
+      event: "new_notification",
+      payload: { targetUserIds },
+    });
+  }
 
   function broadcastListChange() {
     channelRef.current?.send({
@@ -150,6 +192,11 @@ export default function PartyHubClient({
       setTimeout(() => setJoinError(null), 3000);
     } else {
       broadcastListChange();
+      // Notify the party creator about the new join
+      const joinedParty = parties.find((p) => p.id === partyId);
+      if (joinedParty) {
+        broadcastNotification([joinedParty.creator_id]);
+      }
       router.push(`/dashboard/parties/${partyId}`);
     }
   }
@@ -178,7 +225,7 @@ export default function PartyHubClient({
             {currentCallsign}{currentScHandle ? ` · RSI: ${currentScHandle}` : ""}
           </p>
         </div>
-        <PartyNotifications notifications={notifications} />
+        <PartyNotifications notifications={notifications} userId={currentUserId} />
       </div>
 
       {/* Tab bar */}
@@ -323,6 +370,7 @@ export default function PartyHubClient({
                   currentUserId={currentUserId}
                   onJoin={() => handleJoin(party.id)}
                   joining={joiningId === party.id}
+                  reputation={reputations[party.creator_id] ?? undefined}
                 />
               ))}
             </div>
@@ -494,6 +542,7 @@ export default function PartyHubClient({
                   party={party}
                   currentUserId={currentUserId}
                   isMine
+                  reputation={reputations[party.creator_id] ?? undefined}
                 />
               ))}
             </div>
@@ -512,12 +561,14 @@ function PartyCard({
   onJoin,
   joining,
   isMine,
+  reputation,
 }: {
   party: PartyWithDetails;
   currentUserId: string;
   onJoin?: () => void;
   joining?: boolean;
   isMine?: boolean;
+  reputation?: LeaderReputation;
 }) {
   const activity = PARTY_ACTIVITIES[party.activity];
   const status = PARTY_STATUS_LABELS[party.status];
@@ -580,6 +631,24 @@ function PartyCard({
           </span>
         )}
       </div>
+
+      {/* Leader reputation */}
+      {reputation && (
+        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+          <span className="font-mono text-[8px] text-text-muted/60 tracking-widest uppercase">Leader:</span>
+          <div className="flex items-center gap-px">
+            {[1, 2, 3, 4, 5].map((s) => (
+              <svg key={s} width="8" height="8" viewBox="0 0 24 24" fill={s <= Math.round(reputation.avg_stars) ? "#F0A500" : "none"} stroke={s <= Math.round(reputation.avg_stars) ? "#F0A500" : "#45A29E40"} strokeWidth="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+            ))}
+          </div>
+          <span className="font-mono text-[8px] text-amber tracking-widest">{reputation.avg_stars}</span>
+          <span className="font-mono text-[7px] text-text-muted/50 tracking-widest">
+            ({reputation.total_ratings} vote{reputation.total_ratings !== 1 ? "s" : ""} / {reputation.parties_led} {reputation.parties_led !== 1 ? "parties" : "party"})
+          </span>
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between pt-3 border-t border-border">

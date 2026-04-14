@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
-import type { PartyActivity, PartyStatus, PartyWithDetails, PartyMessageWithProfile, PartyNotification, PartyNotificationType } from "@/types/database";
+import type { PartyActivity, PartyStatus, PartyWithDetails, PartyMessageWithProfile, PartyNotification, PartyNotificationType, LeaderReputation } from "@/types/database";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -434,7 +434,8 @@ export async function toggleReady(partyId: string): Promise<{ error?: string }> 
 }
 
 // ─── Auto-Expire Stale Parties ─────────────────────────────────────────────
-// Closes parties that have been open/in_progress for over 24 hours with no updates.
+// Closes parties that have been open/in_progress for over 24 hours.
+// Inserts 0-star penalty ratings for the leader from every remaining member.
 // Called on page load to keep the listing clean.
 
 export async function expireStaleParties(): Promise<void> {
@@ -444,11 +445,52 @@ export async function expireStaleParties(): Promise<void> {
 
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
+  // Find stale parties before closing them (need member lists for penalty)
+  const { data: staleParties } = await supabase
+    .from("parties")
+    .select("id, creator_id")
+    .in("status", ["open", "in_progress"])
+    .lt("updated_at", cutoff);
+
+  if (!staleParties || staleParties.length === 0) return;
+
+  // Close all stale parties
   await supabase
     .from("parties")
     .update({ status: "closed" as PartyStatus })
-    .in("status", ["open", "in_progress"])
-    .lt("updated_at", cutoff);
+    .in("id", staleParties.map((p) => p.id));
+
+  // Insert 0-star penalty ratings for each expired party
+  for (const party of staleParties) {
+    const { data: members } = await supabase
+      .from("party_members")
+      .select("user_id")
+      .eq("party_id", party.id)
+      .neq("user_id", party.creator_id);
+
+    if (!members || members.length === 0) continue;
+
+    // Check which members haven't already rated (shouldn't happen, but be safe)
+    const { data: existingRatings } = await supabase
+      .from("party_ratings")
+      .select("rater_id")
+      .eq("party_id", party.id);
+
+    const alreadyRated = new Set(existingRatings?.map((r) => r.rater_id) ?? []);
+
+    const penalties = members
+      .filter((m) => !alreadyRated.has(m.user_id))
+      .map((m) => ({
+        party_id: party.id,
+        leader_id: party.creator_id,
+        rater_id: m.user_id,
+        stars: 0,
+      }));
+
+    if (penalties.length > 0) {
+      await supabase.from("party_ratings").insert(penalties);
+    }
+  }
 }
 
 // ─── Party Chat — Get Messages ─────────────────────────────────────────────
@@ -577,6 +619,133 @@ export async function clearAllNotifications(): Promise<void> {
     .from("party_notifications")
     .delete()
     .eq("user_id", user.id);
+}
+
+// ─── Rate a Party (after close) ───────────────────────────────────────────
+
+export async function rateParty(
+  partyId: string,
+  stars: number
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "AUTHENTICATION REQUIRED." };
+
+  if (!Number.isInteger(stars) || stars < 0 || stars > 5) {
+    return { error: "RATING MUST BE BETWEEN 0 AND 5." };
+  }
+
+  // Get party info
+  const { data: party } = await supabase
+    .from("parties")
+    .select("id, creator_id, status")
+    .eq("id", partyId)
+    .single();
+
+  if (!party) return { error: "PARTY NOT FOUND." };
+  if (party.status !== "closed") return { error: "PARTY MUST BE CLOSED TO RATE." };
+  if (party.creator_id === user.id) return { error: "CANNOT RATE YOUR OWN PARTY." };
+
+  // Check already rated
+  const { data: existing } = await supabase
+    .from("party_ratings")
+    .select("id")
+    .eq("party_id", partyId)
+    .eq("rater_id", user.id)
+    .single();
+
+  if (existing) return { error: "ALREADY RATED THIS PARTY." };
+
+  const { error } = await supabase.from("party_ratings").insert({
+    party_id: partyId,
+    leader_id: party.creator_id,
+    rater_id: user.id,
+    stars,
+  });
+
+  if (error) return { error: "FAILED TO SUBMIT RATING." };
+  return {};
+}
+
+// ─── Check if user has a pending rating for a closed party ────────────────
+
+export async function getPendingRating(
+  partyId: string
+): Promise<{ canRate: boolean; partyActivity?: PartyActivity; partyTitle?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { canRate: false };
+
+  // Get party info
+  const { data: party } = await supabase
+    .from("parties")
+    .select("id, creator_id, status, activity, title")
+    .eq("id", partyId)
+    .single();
+
+  if (!party || party.status !== "closed" || party.creator_id === user.id) {
+    return { canRate: false };
+  }
+
+  // Check if already rated
+  const { data: existing } = await supabase
+    .from("party_ratings")
+    .select("id")
+    .eq("party_id", partyId)
+    .eq("rater_id", user.id)
+    .single();
+
+  if (existing) return { canRate: false };
+
+  return { canRate: true, partyActivity: party.activity, partyTitle: party.title };
+}
+
+// ─── Get Leader Reputation (aggregate across all closed parties) ──────────
+// Formula: total stars / total individual votes across ALL closed parties.
+// Each vote weighs equally, so a party with 5 voters naturally outweighs
+// one with 1 voter. Auto-expired parties contribute 0-star penalty votes
+// from every member, dragging the score down proportionally.
+
+export async function getLeaderReputation(
+  leaderId: string
+): Promise<LeaderReputation | null> {
+  const supabase = await createClient();
+
+  // Get all closed parties for this leader
+  const { data: parties } = await supabase
+    .from("parties")
+    .select("id, activity")
+    .eq("creator_id", leaderId)
+    .eq("status", "closed")
+    .order("updated_at", { ascending: false });
+
+  if (!parties || parties.length === 0) return null;
+
+  // Get ALL ratings for this leader across all their parties
+  const { data: allRatings } = await supabase
+    .from("party_ratings")
+    .select("stars")
+    .eq("leader_id", leaderId);
+
+  if (!allRatings || allRatings.length === 0) return null;
+
+  const totalStars = allRatings.reduce((sum, r) => sum + r.stars, 0);
+  const avg = Math.round((totalStars / allRatings.length) * 10) / 10;
+
+  // Count how many parties actually received ratings
+  const { data: ratedPartyIds } = await supabase
+    .from("party_ratings")
+    .select("party_id")
+    .eq("leader_id", leaderId);
+
+  const uniquePartiesRated = new Set(ratedPartyIds?.map((r) => r.party_id) ?? []).size;
+
+  return {
+    avg_stars: avg,
+    total_ratings: allRatings.length,
+    parties_led: uniquePartiesRated,
+    last_activity: parties[0].activity,
+  };
 }
 
 // ─── Edit Party (Creator Only) ─────────────────────────────────────────────

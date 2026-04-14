@@ -10,6 +10,7 @@ import {
   PARTY_STATUS_LABELS,
   type PartyWithDetails,
   type PartyMessageWithProfile,
+  type LeaderReputation,
 } from "@/types/database";
 import {
   joinParty,
@@ -22,6 +23,9 @@ import {
   getParty,
   editParty,
   toggleReady,
+  rateParty,
+  getPendingRating,
+  getLeaderReputation,
 } from "@/app/actions/parties";
 import { usePartyRealtime } from "@/hooks/use-party-realtime";
 
@@ -56,6 +60,13 @@ export default function PartyDetailClient({
   const [editMax, setEditMax] = useState(4);
   const [editVoice, setEditVoice] = useState("");
   const [readyLoading, setReadyLoading] = useState(false);
+  const [showRating, setShowRating] = useState(false);
+  const [ratingValue, setRatingValue] = useState(0);
+  const [ratingHover, setRatingHover] = useState(0);
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const [ratingDone, setRatingDone] = useState(false);
+  const [leaderRep, setLeaderRep] = useState<LeaderReputation | null>(null);
+  const [countdown, setCountdown] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const activity = PARTY_ACTIVITIES[party.activity];
@@ -69,6 +80,43 @@ export default function PartyDetailClient({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
+  // Load leader reputation
+  useEffect(() => {
+    getLeaderReputation(party.creator_id).then(setLeaderRep);
+  }, [party.creator_id]);
+
+  // Check for pending rating when party becomes closed
+  useEffect(() => {
+    if (party.status === "closed" && !isCreator && !ratingDone) {
+      getPendingRating(party.id).then((result) => {
+        if (result.canRate) setShowRating(true);
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [party.status, party.id]);
+
+  // Countdown timer for auto-close (24h from updated_at)
+  useEffect(() => {
+    if (party.status === "closed") { setCountdown(""); return; }
+
+    function tick() {
+      const deadline = new Date(party.updated_at).getTime() + 24 * 60 * 60 * 1000;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        setCountdown("EXPIRED");
+        return;
+      }
+      const h = Math.floor(remaining / 3600000);
+      const m = Math.floor((remaining % 3600000) / 60000);
+      const s = Math.floor((remaining % 60000) / 1000);
+      setCountdown(`${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`);
+    }
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [party.status, party.updated_at]);
+
   // Real-time: refresh party data when changes happen
   const refreshParty = useCallback(async () => {
     const updated = await getParty(party.id);
@@ -80,13 +128,21 @@ export default function PartyDetailClient({
     setMessages(msgs);
   }, [party.id]);
 
-  // Also notify the party hub list so other users browsing see updates
+  // Also notify the party hub list and notification channel
   const hubChannelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
+  const notifChannelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
   useEffect(() => {
     const supabase = createClient();
     const ch = supabase.channel("party-hub", { config: { broadcast: { self: false } } }).subscribe();
+    const notifCh = supabase.channel("party-notifications", { config: { broadcast: { self: false } } }).subscribe();
     hubChannelRef.current = ch;
-    return () => { supabase.removeChannel(ch); };
+    notifChannelRef.current = notifCh;
+    return () => {
+      supabase.removeChannel(ch);
+      supabase.removeChannel(notifCh);
+      hubChannelRef.current = null;
+      notifChannelRef.current = null;
+    };
   }, []);
 
   function broadcastHubChange() {
@@ -95,6 +151,21 @@ export default function PartyDetailClient({
       event: "party_list_change",
       payload: { sender: currentUserId },
     });
+  }
+
+  function broadcastNotification(targetUserIds: string[]) {
+    notifChannelRef.current?.send({
+      type: "broadcast",
+      event: "new_notification",
+      payload: { targetUserIds },
+    });
+  }
+
+  /** Get all member user IDs except the current user (for notification targeting) */
+  function getOtherMemberIds(): string[] {
+    return (party.members ?? [])
+      .map((m) => m.user_id)
+      .filter((id) => id !== currentUserId);
   }
 
   const { broadcast } = usePartyRealtime({
@@ -114,6 +185,7 @@ export default function PartyDetailClient({
     action: () => Promise<{ error?: string }>,
     redirectTo?: string,
     broadcastType?: "party_update" | "members_change",
+    notifyTargets?: string[],
   ) {
     setLoading(true);
     setError(null);
@@ -124,7 +196,10 @@ export default function PartyDetailClient({
     } else {
       if (broadcastType) {
         broadcast({ type: broadcastType, sender: currentUserId });
-        broadcastHubChange(); // notify party hub list
+        broadcastHubChange();
+      }
+      if (notifyTargets && notifyTargets.length > 0) {
+        broadcastNotification(notifyTargets);
       }
       if (redirectTo) {
         router.push(redirectTo);
@@ -143,6 +218,7 @@ export default function PartyDetailClient({
     } else {
       broadcast({ type: "members_change", sender: currentUserId });
       broadcastHubChange();
+      broadcastNotification([targetUserId]);
       await refreshParty();
     }
   }
@@ -153,6 +229,18 @@ export default function PartyDetailClient({
     await refreshParty();
     setReadyLoading(false);
     broadcast({ type: "members_change", sender: currentUserId });
+  }
+
+  async function handleRatingSubmit() {
+    setRatingSubmitting(true);
+    const result = await rateParty(party.id, ratingValue);
+    setRatingSubmitting(false);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setRatingDone(true);
+      setShowRating(false);
+    }
   }
 
   function handleCopyLink() {
@@ -295,7 +383,71 @@ export default function PartyDetailClient({
             Created {getTimeAgo(party.created_at)}
           </span>
         </div>
+
+        {/* Leader reputation */}
+        {leaderRep && (
+          <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-[9px] text-text-muted tracking-widest uppercase">Leader Rating:</span>
+            <div className="flex items-center gap-0.5">
+              {[1, 2, 3, 4, 5].map((s) => (
+                <svg key={s} width="10" height="10" viewBox="0 0 24 24" fill={s <= Math.round(leaderRep.avg_stars) ? "#F0A500" : "none"} stroke={s <= Math.round(leaderRep.avg_stars) ? "#F0A500" : "#45A29E40"} strokeWidth="2">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+              ))}
+            </div>
+            <span className="font-mono text-[9px] text-amber tracking-widest">
+              {leaderRep.avg_stars}
+            </span>
+            <span className="font-mono text-[8px] text-text-muted/50 tracking-widest">
+              ({leaderRep.total_ratings} vote{leaderRep.total_ratings !== 1 ? "s" : ""} across {leaderRep.parties_led} {leaderRep.parties_led !== 1 ? "parties" : "party"})
+            </span>
+            <span className="font-mono text-[8px] tracking-widest uppercase" style={{ color: PARTY_ACTIVITIES[leaderRep.last_activity].color }}>
+              Last: {PARTY_ACTIVITIES[leaderRep.last_activity].label}
+            </span>
+          </div>
+        )}
       </div>
+
+      {/* Auto-close countdown warning */}
+      {party.status !== "closed" && countdown && (
+        <div className={[
+          "mb-4 border px-4 py-3 flex items-start gap-3",
+          countdown === "EXPIRED"
+            ? "border-danger/40 bg-danger/5"
+            : "border-amber/30 bg-amber/5",
+        ].join(" ")}>
+          <div className="shrink-0 mt-0.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={countdown === "EXPIRED" ? "#FF2442" : "#F0A500"} strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-1">
+              <span className={[
+                "font-mono text-[11px] tracking-widest font-bold",
+                countdown === "EXPIRED" ? "text-danger" : "text-amber",
+              ].join(" ")}>
+                {countdown === "EXPIRED" ? "AUTO-CLOSED" : countdown}
+              </span>
+              <span className="font-mono text-[9px] text-text-muted tracking-widest uppercase">
+                until auto-close
+              </span>
+            </div>
+            {isCreator ? (
+              <p className="font-mono text-[9px] text-text-muted tracking-widest leading-relaxed">
+                Close this party manually when your activity is finished.
+                Parties not closed within 24h are auto-closed with a <span className="text-danger font-bold">0-star penalty</span> from every remaining member.
+              </p>
+            ) : (
+              <p className="font-mono text-[9px] text-text-muted tracking-widest leading-relaxed">
+                This party will auto-close in the time shown above.
+                If auto-closed, a <span className="text-danger font-bold">0-star rating</span> is applied to the leader.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -397,11 +549,94 @@ export default function PartyDetailClient({
         </div>
       )}
 
+      {/* Rating Modal */}
+      {showRating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="mtc-panel bg-bg-surface p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-1 h-5 bg-amber" />
+              <h2 className="font-mono text-xs tracking-[0.25em] text-text-dim uppercase">
+                Rate This Party
+              </h2>
+            </div>
+            <p className="font-mono text-[10px] text-text-muted tracking-widest mb-1">
+              How was <span className="text-text-bright">{party.creator?.callsign ?? "the leader"}</span>&apos;s party?
+            </p>
+            <p className="font-mono text-[9px] text-text-muted/60 tracking-widest mb-5">
+              Your rating will be shown on their next party listing.
+            </p>
+
+            {/* Star picker */}
+            <div className="flex items-center justify-center gap-1 mb-6">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  type="button"
+                  onMouseEnter={() => setRatingHover(star)}
+                  onMouseLeave={() => setRatingHover(0)}
+                  onClick={() => setRatingValue(star)}
+                  className="p-1 transition-transform hover:scale-110"
+                >
+                  <svg
+                    width="28"
+                    height="28"
+                    viewBox="0 0 24 24"
+                    fill={(ratingHover || ratingValue) >= star ? "#F0A500" : "none"}
+                    stroke={(ratingHover || ratingValue) >= star ? "#F0A500" : "#45A29E40"}
+                    strokeWidth="1.5"
+                  >
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  </svg>
+                </button>
+              ))}
+            </div>
+
+            <div className="text-center mb-5">
+              <span className="font-mono text-[11px] tracking-widest text-amber">
+                {ratingValue === 0 ? "SELECT A RATING" : `${ratingValue} STAR${ratingValue !== 1 ? "S" : ""}`}
+              </span>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => { setShowRating(false); setRatingDone(true); }}
+                className="mtc-btn-ghost text-[10px]"
+              >
+                SKIP
+              </button>
+              <button
+                onClick={handleRatingSubmit}
+                disabled={ratingValue === 0 || ratingSubmitting}
+                className="mtc-btn-primary text-[10px] px-5"
+              >
+                {ratingSubmitting ? "SUBMITTING..." : "SUBMIT"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rating submitted confirmation */}
+      {ratingDone && !showRating && ratingValue > 0 && (
+        <div className="mb-4 border border-amber/30 bg-amber/5 px-4 py-2 flex items-center gap-2">
+          <span className="font-mono text-[10px] text-amber tracking-widest">
+            RATING SUBMITTED — {ratingValue} STAR{ratingValue !== 1 ? "S" : ""}
+          </span>
+          <div className="flex gap-0.5">
+            {[1, 2, 3, 4, 5].map((s) => (
+              <svg key={s} width="10" height="10" viewBox="0 0 24 24" fill={s <= ratingValue ? "#F0A500" : "none"} stroke={s <= ratingValue ? "#F0A500" : "#666"} strokeWidth="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
         {!isMember && !isCreator && party.status === "open" && (
           <button
-            onClick={() => handleAction(() => joinParty(party.id), undefined, "members_change")}
+            onClick={() => handleAction(() => joinParty(party.id), undefined, "members_change", [party.creator_id])}
             disabled={loading}
             className="mtc-btn-primary"
           >
@@ -410,7 +645,7 @@ export default function PartyDetailClient({
         )}
         {isMember && !isCreator && (
           <button
-            onClick={() => confirmThen("leave this party", () => handleAction(() => leaveParty(party.id), "/dashboard/parties", "members_change"))}
+            onClick={() => confirmThen("leave this party", () => handleAction(() => leaveParty(party.id), "/dashboard/parties", "members_change", getOtherMemberIds()))}
             disabled={loading}
             className="mtc-btn-ghost text-danger border-danger/30 hover:bg-danger/10"
           >
@@ -421,7 +656,7 @@ export default function PartyDetailClient({
           <>
             {party.status === "open" && (
               <button
-                onClick={() => handleAction(() => updatePartyStatus(party.id, "in_progress"), undefined, "party_update")}
+                onClick={() => handleAction(() => updatePartyStatus(party.id, "in_progress"), undefined, "party_update", getOtherMemberIds())}
                 disabled={loading}
                 className="mtc-btn-primary"
               >
@@ -443,7 +678,7 @@ export default function PartyDetailClient({
                   EDIT
                 </button>
                 <button
-                  onClick={() => confirmThen("close this party", () => handleAction(() => closeParty(party.id), "/dashboard/parties", "party_update"))}
+                  onClick={() => confirmThen("close this party", () => handleAction(() => closeParty(party.id), "/dashboard/parties", "party_update", getOtherMemberIds()))}
                   disabled={loading}
                   className="mtc-btn-ghost text-danger border-danger/30 hover:bg-danger/10"
                 >
